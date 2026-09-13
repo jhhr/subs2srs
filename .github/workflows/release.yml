@@ -42,7 +42,7 @@ jobs:
 
       - name: Publish (self-contained win-x64)
         run: |
-          dotnet restore --locked-mode
+          dotnet restore subs2srs/subs2srs.csproj --locked-mode
           dotnet publish subs2srs/subs2srs.csproj -c Release -r win-x64 --self-contained true `
             -p:Version=${{ steps.ver.outputs.version }} -o out\win-x64
 

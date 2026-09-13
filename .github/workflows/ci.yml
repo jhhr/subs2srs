@@ -36,7 +36,11 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends libgtk-4-1 xvfb fonts-dejavu-core ffmpeg
-      - run: dotnet restore --locked-mode
+      - name: Restore (locked)
+        run: |
+          dotnet restore subs2srs/subs2srs.csproj --locked-mode
+          dotnet restore subs2srs.Tests/subs2srs.Tests.csproj --locked-mode
+          dotnet restore subs2srs.UiTests/subs2srs.UiTests.csproj --locked-mode
       - run: dotnet build subs2srs/subs2srs.csproj -c Release --no-restore
       - name: Unit + card-generation tests
         run: dotnet test subs2srs.Tests/subs2srs.Tests.csproj -c Release --no-restore --logger trx --results-directory TestResults/unit
@@ -81,7 +85,11 @@ jobs:
           "C:\msys64\ucrt64\bin" | Out-File -FilePath $env:GITHUB_PATH -Append -Encoding utf8
       - name: Install ffmpeg
         run: choco install ffmpeg -y --no-progress
-      - run: dotnet restore --locked-mode
+      - name: Restore (locked)
+        run: |
+          dotnet restore subs2srs/subs2srs.csproj --locked-mode
+          dotnet restore subs2srs.Tests/subs2srs.Tests.csproj --locked-mode
+          dotnet restore subs2srs.UiTests/subs2srs.UiTests.csproj --locked-mode
       - run: dotnet build subs2srs/subs2srs.csproj -c Release --no-restore
       - name: Unit + card-generation tests
         run: dotnet test subs2srs.Tests/subs2srs.Tests.csproj -c Release --no-restore --logger trx --results-directory TestResults/unit
