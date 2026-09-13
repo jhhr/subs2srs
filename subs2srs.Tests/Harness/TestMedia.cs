@@ -71,6 +71,41 @@ namespace subs2srs.Tests.Harness
             }
         }
 
+        /// <summary>
+        /// A short dialogue for the snippet tests, timed so that the rule-based
+        /// grouper joins lines 1+2 (question, 0.4 s gap) and leaves 3 and 4 alone
+        /// (2.6 s gap before 3; 3 ends with a full stop, 0.2 s gap to 4).
+        /// </summary>
+        public static readonly (double start, double end, string text)[] DialogueLines =
+        {
+            (1.0, 2.0, "Where are you going?"),
+            (2.4, 3.4, "To the station."),
+            (6.0, 7.0, "See you later."),
+            (7.2, 8.2, "Bye."),
+        };
+
+        /// <summary>Write <see cref="DialogueLines"/> as a UTF-8 SRT file and return its path.</summary>
+        public static string WriteDialogueSrt(string dir)
+        {
+            var sb = new StringBuilder();
+            for (int i = 0; i < DialogueLines.Length; i++)
+            {
+                var (start, end, text) = DialogueLines[i];
+                sb.Append(i + 1).Append("\r\n");
+                sb.Append(SrtTime(start)).Append(" --> ").Append(SrtTime(end)).Append("\r\n");
+                sb.Append(text).Append("\r\n\r\n");
+            }
+            string path = Path.Combine(dir, "dialogue.srt");
+            File.WriteAllText(path, sb.ToString(), new UTF8Encoding(false));
+            return path;
+        }
+
+        private static string SrtTime(double seconds)
+        {
+            var t = TimeSpan.FromSeconds(seconds);
+            return $"{(int)t.TotalHours:00}:{t.Minutes:00}:{t.Seconds:00},{t.Milliseconds:000}";
+        }
+
         /// <summary>1→3 s, 3→5 s, 5→7 s, 7→9 s.</summary>
         public static string BuildSrt(string[] lines)
         {

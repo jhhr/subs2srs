@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+**Multi-line snippets** (Advanced Subtitle Options → Snippets):
+- A card can now be built from several consecutive subtitle lines (a question and its answer, a sentence split over lines). The texts are joined with a configurable separator (`<br>` by default), the card spans from the first line's start to the last line's end, and every card stays within a configurable maximum length (15 s by default, measured after gap removal).
+- **Rules** grouping mode proposes snippets without any external service: a line joins the previous one when the gap is small (1.5 s by default) and the previous line ends with a cue character (`?？…→、,`) or the speaker changes. **Off** (the default) keeps one card per line, exactly as before.
+- **Dead-space removal**: inside a multi-line card, silences longer than a threshold (500 ms by default) are shortened to that length when the audio and video clips are cut. Audio is cut with a single ffmpeg `aselect` filter; video clips are stream-copied per part and joined with the concat demuxer. Lines joined by the existing *Join sentences* option now record where each original line was spoken, so they benefit too. Snapshots of a snippet are taken from its first line.
+- **Preview** shows the grouping on top of the line list (a coloured band and bracket in the new *Group* column with the snippet's trimmed duration, and a *Gap* column with the silence before each line). Each line has three actions, *Attach ↑*, *Attach ↓* and *Detach*, available as buttons, as configurable keys (Preferences → Snippets; defaults `Ctrl+Up`/`W`, `Ctrl+Down`/`S`, `Ctrl+Backspace`/`X`) and by dragging a line onto its neighbour (onto itself to detach). Attaching is refused when the result would exceed the length limit, with the overshoot shown. *Regroup (rules)*, *Ungroup all*, *Undo*/*Redo* and *Next diff* (jump to the next line where the edit differs from the proposal) complete the editor. *Preview Audio* plays the whole snippet with dead space removed.
+- Go from the Preview now generates exactly the lines shown there (activations, text edits and grouping); previously the Preview's edits were discarded and the subtitles re-parsed.
+- **Save as validation** (Preview) writes one `<deck>_<episode>.grouping.json` per episode with the kept lines, the omission settings, the limits, the human grouping and the proposal it started from, to the *Validation Directory* preference (default `<Output Directory>/validation`). These files are the ground truth for evaluating groupers.
+- Project files gain a `snippets` section; old projects load with snippets off. Preferences gain *Validation Directory* and the three key bindings.
+
 **Windows support**:
 - subs2srs now runs on Windows 10/11. Releases attach a self-contained portable zip (`subs2srs-<ver>-win-x64.zip`) with .NET and the GTK 4 runtime bundled from MSYS2 UCRT64 (`dist/windows/bundle-gtk.ps1`, `.github/workflows/release.yml`). ffmpeg is not bundled.
 - New preference **Tools Directory** (Misc): a folder searched before `PATH` for ffmpeg, ffprobe, ffplay, mkvinfo, mkvextract and mp3gain. Tool lookup is `PATHEXT`-aware and no longer mutates the process `PATH`.
