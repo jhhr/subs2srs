@@ -1,4 +1,4 @@
-﻿//  Copyright (C) 2009-2016 Christopher Brochtrup
+//  Copyright (C) 2009-2016 Christopher Brochtrup
 //  Copyright (C) 2026 fkzys and contributors
 //
 //  This file is part of subs2srs.
@@ -19,6 +19,7 @@
 //////////////////////////////////////////////////////////////////////////////
 
 using System;
+using System.Collections.Generic;
 
 namespace subs2srs
 {
@@ -47,6 +48,13 @@ namespace subs2srs
     /// </summary>
     public string Actor { get; set; }
 
+    /// <summary>
+    /// When the sentence-join feature combined several subtitle lines into this
+    /// one, the time ranges of the original lines (so the gaps between them can
+    /// be removed from the media). Null for a line that was not joined.
+    /// </summary>
+    public List<TimeRange>? Segments { get; set; }
+
     public InfoLine()
     {
       StartTime = TimeSpan.Zero;
@@ -69,6 +77,23 @@ namespace subs2srs
       EndTime = endTime;
       Text = text;
       Actor = actor;
+    }
+
+    /// <summary>
+    /// Shift StartTime, EndTime and any recorded segments by the given number of milliseconds.
+    /// </summary>
+    public void Shift(int shiftMs)
+    {
+      StartTime = UtilsSubs.shiftTiming(StartTime, shiftMs);
+      EndTime = UtilsSubs.shiftTiming(EndTime, shiftMs);
+      if (Segments != null)
+      {
+        foreach (TimeRange r in Segments)
+        {
+          r.Start = UtilsSubs.shiftTiming(r.Start, shiftMs);
+          r.End = UtilsSubs.shiftTiming(r.End, shiftMs);
+        }
+      }
     }
 
     /// <summary>

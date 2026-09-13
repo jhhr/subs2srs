@@ -30,8 +30,13 @@ namespace subs2srs
         private DateTime workerStartTime;
         private int currentStep = 0;
 
+        /// <summary>
+        /// Run the whole pipeline. When the preview already parsed and filtered the
+        /// lines, pass its <paramref name="combinedAll"/> (and the join vectors it
+        /// edited, <paramref name="joins"/>) so the user's edits are what gets generated.
+        /// </summary>
         public async Task StartAsync(IProgressReporter dialogProgress,
-            List<List<InfoCombined>> combinedAll = null)
+            List<List<InfoCombined>> combinedAll = null, List<bool[]> joins = null)
         {
             UtilsCommon.RegisterEncodings();
 
@@ -48,6 +53,7 @@ namespace subs2srs
             WorkerVars workerVars = new WorkerVars(combinedAll,
                 getMediaDir(Settings.Instance.OutputDir, Settings.Instance.DeckName),
                 WorkerVars.SubsProcessingType.Normal);
+            workerVars.Joins = joins;
             this.currentStep = 0;
             dialogProgress.StepsTotal = determineNumSteps(combinedAll);
             this.workerStartTime = DateTime.Now;
@@ -101,6 +107,14 @@ namespace subs2srs
                 if (combinedAll != null) workerVars.CombinedAll = combinedAll;
                 else throw new OperationCanceledException();
             }
+
+            // Runs whether the lines came from the preview (reusing its join vectors)
+            // or were just generated (deriving them from the settings).
+            dialogProgress.NextStep(++currentStep, "Group into snippets");
+            combinedAll = subsWorker.groupIntoSnippets(workerVars, dialogProgress);
+
+            if (combinedAll != null) workerVars.CombinedAll = combinedAll;
+            else throw new OperationCanceledException();
 
             if ((Settings.Instance.ContextLeadingCount > 0) || (Settings.Instance.ContextTrailingCount > 0))
             {
@@ -215,7 +229,7 @@ namespace subs2srs
 
         private int determineNumSteps(List<List<InfoCombined>> combinedAll)
         {
-            int numSteps = combinedAll == null ? 4 : 2;
+            int numSteps = combinedAll == null ? 5 : 3;
             if ((Settings.Instance.ContextLeadingCount > 0) || (Settings.Instance.ContextTrailingCount > 0)) numSteps++;
             if (Settings.Instance.AudioClips.Enabled) numSteps++;
             if (Settings.Instance.Snapshots.Enabled) numSteps++;

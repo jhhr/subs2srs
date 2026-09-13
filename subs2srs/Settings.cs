@@ -114,6 +114,13 @@ namespace subs2srs
     public const string DuelingQuickRefFilenameFormat = "${deck_name}_${0:episode_num}.txt";
     public const string DuelingQuickRefSubs1Format = "[${0:s_total_hour}:${0:s_min}:${0:s_sec}.${0:s_hsec}]  ${subs1_line}";
     public const string DuelingQuickRefSubs2Format = "[${0:s_total_hour}:${0:s_min}:${0:s_sec}.${0:s_hsec}]  ${subs2_line}\n";
+
+    // ── Snippets ──
+    public const string ValidationDir = ""; // "" = <OutputDir>/validation
+    // Key bindings are GTK accelerator names, several separated by spaces.
+    public const string GroupingKeyAttachAbove = "<Control>Up w";
+    public const string GroupingKeyAttachBelow = "<Control>Down s";
+    public const string GroupingKeyDetach = "<Control>BackSpace x";
   }
 
 
@@ -784,6 +791,31 @@ namespace subs2srs
         get => Prefs.DuelingQuickRefSubs2Format;
         set => Prefs.DuelingQuickRefSubs2Format = value;
     }
+
+    /// <summary>Where "Save as validation" writes grouping files. Empty = &lt;OutputDir&gt;/validation.</summary>
+    public static string ValidationDir
+    {
+        get => Prefs.ValidationDir ?? "";
+        set => Prefs.ValidationDir = value ?? "";
+    }
+
+    public static string GroupingKeyAttachAbove
+    {
+        get => Prefs.GroupingKeyAttachAbove ?? "";
+        set => Prefs.GroupingKeyAttachAbove = value ?? "";
+    }
+
+    public static string GroupingKeyAttachBelow
+    {
+        get => Prefs.GroupingKeyAttachBelow ?? "";
+        set => Prefs.GroupingKeyAttachBelow = value ?? "";
+    }
+
+    public static string GroupingKeyDetach
+    {
+        get => Prefs.GroupingKeyDetach ?? "";
+        set => Prefs.GroupingKeyDetach = value ?? "";
+    }
   }
 
   /// <summary>
@@ -977,6 +1009,46 @@ namespace subs2srs
   }
 
 
+  /// <summary>How cards are grouped from several subtitle lines.</summary>
+  [JsonConverter(typeof(JsonStringEnumConverter))]
+  public enum SnippetMode
+  {
+    /// <summary>One card per line (the classic behaviour).</summary>
+    Off,
+    /// <summary>Deterministic grouper: small gaps plus a cue (question mark, speaker change, ...).</summary>
+    Rules,
+    /// <summary>Language model decides; falls back to Rules when no model is configured.</summary>
+    AI
+  }
+
+
+  /// <summary>
+  /// Multi-line snippets: grouping mode, the limits every grouping must respect,
+  /// dead-space removal, and the rule-based grouper's knobs.
+  /// </summary>
+  public class SnippetSettings
+  {
+    public SnippetMode Mode { get; set; } = SnippetMode.Off;
+
+    /// <summary>Maximum trimmed duration of one card, in seconds.</summary>
+    public int MaxSnippetSeconds { get; set; } = 15;
+
+    /// <summary>Shorten silences inside a multi-line card when cutting media.</summary>
+    public bool GapRemovalEnabled { get; set; } = true;
+
+    /// <summary>A gap longer than this (ms) is shortened to this length; shorter gaps are untouched.</summary>
+    public int GapKeepMs { get; set; } = 500;
+
+    /// <summary>Put between the texts of the lines that make up a card.</summary>
+    public string Separator { get; set; } = "<br>";
+
+    public int RulesMaxJoinGapMs { get; set; } = 1500;
+    public bool RulesRequireCue { get; set; } = true;
+    public string RulesCueChars { get; set; } = "?？…→、,";
+    public bool RulesJoinOnActorChange { get; set; } = true;
+  }
+
+
   public sealed class Settings
   {
     private static readonly Settings instance = CreateDefaults();
@@ -999,6 +1071,9 @@ namespace subs2srs
     // NOTE: typo "langauge" preserved for .s2s backward compatibility
     [JsonPropertyName("langaugeSpecific")]
     public LanguageSpecific LanguageSpecific { get; set; }
+
+    [JsonPropertyName("snippets")]
+    public SnippetSettings Snippets { get; set; }
 
     [JsonPropertyName("outputDir")]
     public string OutputDir { get; set; }
@@ -1113,6 +1188,7 @@ namespace subs2srs
       Snapshots = other.Snapshots;
       VobSubColors = other.VobSubColors;
       LanguageSpecific = other.LanguageSpecific;
+      Snippets = other.Snippets ?? new SnippetSettings();
 
       OutputDir = other.OutputDir;
 
@@ -1205,6 +1281,7 @@ namespace subs2srs
 
       VobSubColors = new VobSubColors();
       LanguageSpecific = new LanguageSpecific();
+      Snippets = new SnippetSettings();
       OutputDir = ConstantSettings.DefaultOutputDir;
       TimeShiftEnabled = false;
       SpanEnabled = false;

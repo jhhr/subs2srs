@@ -65,6 +65,7 @@ namespace subs2srs
             loaded.Snapshots       ??= def.Snapshots;
             loaded.VobSubColors    ??= def.VobSubColors;
             loaded.LanguageSpecific ??= def.LanguageSpecific;
+            loaded.Snippets        ??= def.Snippets;
             loaded.ActorList       ??= new List<string>();
 
             Settings.Instance.RestoreFrom(loaded);

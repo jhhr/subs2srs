@@ -40,6 +40,22 @@ namespace subs2srs
     public List<List<InfoCombined>> CombinedAll { get; set; }
 
     /// <summary>
+    /// Per episode, the full-index join vector that groups lines into snippets
+    /// (see <see cref="SnippetGrouping"/>). Null until a grouping pass or the
+    /// preview produced one; the grouping step then derives one from the settings.
+    /// </summary>
+    public List<bool[]> Joins { get; set; }
+
+    /// <summary>
+    /// Per episode, the grouping the preview started from (rules or model), for
+    /// the validation export. Null when there was none.
+    /// </summary>
+    public List<bool[]> ProposedJoins { get; set; }
+
+    /// <summary>Who produced <see cref="ProposedJoins"/> ("rules", "ai"), for the validation export.</summary>
+    public string ProposalProducer { get; set; }
+
+    /// <summary>
     /// The media directory.
     /// </summary>
     public string MediaDir { get; set; }

@@ -118,8 +118,7 @@ namespace subs2srs
           int shift = Settings.Instance.Subs[0].GetEffectiveTimeShift(episodeNumber);
           foreach (InfoLine line in subs1LineInfos)
           {
-            line.StartTime = UtilsSubs.shiftTiming(line.StartTime, shift);
-            line.EndTime = UtilsSubs.shiftTiming(line.EndTime, shift);
+            line.Shift(shift);
           }
         }
 
@@ -153,8 +152,7 @@ namespace subs2srs
             int shift = Settings.Instance.Subs[1].GetEffectiveTimeShift(episodeNumber);
             foreach (InfoLine line in subs2LineInfos)
             {
-              line.StartTime = UtilsSubs.shiftTiming(line.StartTime, shift);
-              line.EndTime = UtilsSubs.shiftTiming(line.EndTime, shift);
+              line.Shift(shift);
             }
           }
         }
@@ -193,6 +191,9 @@ namespace subs2srs
             // The rest of the software uses subs1 for timing, so just cram subs2 timings into subs1
             comb.Subs1.StartTime = comb.Subs2.StartTime;
             comb.Subs1.EndTime = comb.Subs2.EndTime;
+            comb.Subs1.Segments = comb.Subs2.Segments == null
+              ? null
+              : comb.Subs2.Segments.ConvertAll(r => new TimeRange(r.Start, r.End));
           }
         }
 
@@ -362,7 +363,9 @@ namespace subs2srs
             // Add the repeat's Subs1 text to the original Subs1 (Subs1_A in the example)
             comb.Subs1.Text += " " + repeat.Subs1.Text;
 
-            // Expand the end time of original Subs1 (Subs1_A in the example)
+            // Remember where each original line was spoken, then expand the end time
+            // of original Subs1 (Subs1_A in the example)
+            appendSegments(comb.Subs1, repeat.Subs1);
             comb.Subs1.EndTime = repeat.Subs1.EndTime;
 
             break;
@@ -625,6 +628,7 @@ namespace subs2srs
         string lastCharInLine = curLine.Text[curLine.Text.Length - 1].ToString();
 
         combinedLines.Text += " " + curLine.Text;
+        appendSegments(combinedLines, curLine);
         combinedLines.EndTime = curLine.EndTime;
 
         // If we have found the end line of the current sentence
@@ -635,6 +639,28 @@ namespace subs2srs
       }
 
       return lineIdx;
+    }
+
+
+    /// <summary>
+    /// Record the dialogue ranges of <paramref name="target"/> and <paramref name="extra"/>
+    /// in target.Segments, so that a line built from several subtitle lines still
+    /// knows where each of them was spoken (used for dead-space removal).
+    /// Call before extending target's EndTime.
+    /// </summary>
+    private static void appendSegments(InfoLine target, InfoLine extra)
+    {
+      target.Segments ??= new List<TimeRange> { new TimeRange(target.StartTime, target.EndTime) };
+
+      if (extra.Segments != null && extra.Segments.Count > 0)
+      {
+        foreach (TimeRange r in extra.Segments)
+          target.Segments.Add(new TimeRange(r.Start, r.End));
+      }
+      else
+      {
+        target.Segments.Add(new TimeRange(extra.StartTime, extra.EndTime));
+      }
     }
 
 
@@ -906,6 +932,107 @@ namespace subs2srs
       }
 
       return workerVars.CombinedAll;
+    }
+
+
+    /// <summary>
+    /// Group each episode's lines into multi-line snippets.
+    ///
+    /// Uses the join vectors in <see cref="WorkerVars.Joins"/> when the preview
+    /// produced them (so manual edits survive Go); otherwise derives them from
+    /// the Snippets settings (<see cref="computeJoins"/>). The limits are enforced
+    /// regardless of who proposed the grouping, then the lines are replaced by
+    /// snippet-level InfoCombineds (<see cref="SnippetGrouping.Materialize"/>).
+    /// With Mode = Off and no preview edits this is the identity.
+    /// Call inactivateLines() before calling this routine.
+    /// </summary>
+    public List<List<InfoCombined>> groupIntoSnippets(WorkerVars workerVars, IProgressReporter dialogProgress)
+    {
+      SnippetSettings settings = Settings.Instance.Snippets;
+      SnippetLimits limits = SnippetLimits.FromSettings();
+      RuleGrouperOptions ruleOptions = RuleGrouperOptions.FromSettings();
+      var result = new List<List<InfoCombined>>();
+      int totalEpisodes = workerVars.CombinedAll.Count;
+
+      bool haveJoins = workerVars.Joins != null && workerVars.Joins.Count == totalEpisodes;
+      if (!haveJoins)
+      {
+        workerVars.Joins = new List<bool[]>();
+      }
+
+      for (int epIdx = 0; epIdx < totalEpisodes; epIdx++)
+      {
+        List<InfoCombined> lines = workerVars.CombinedAll[epIdx];
+        bool[] joins;
+
+        if (haveJoins && workerVars.Joins[epIdx] != null && workerVars.Joins[epIdx].Length == lines.Count)
+        {
+          joins = workerVars.Joins[epIdx];
+        }
+        else
+        {
+          joins = computeJoins(lines, settings.Mode, limits, ruleOptions);
+          if (haveJoins) workerVars.Joins[epIdx] = joins;
+          else workerVars.Joins.Add(joins);
+        }
+
+        // Enforce the limits no matter who proposed the grouping
+        int[] kept = SnippetGrouping.KeptIndices(lines);
+        var log = new List<string>();
+        bool[] repaired = SnippetGrouping.Repair(lines, kept, SnippetGrouping.ProjectToKept(joins, kept), limits, log);
+        foreach (string message in log)
+        {
+          Logger.Instance.info($"Snippet grouping (episode {epIdx + Settings.Instance.EpisodeStartNumber}): {message}");
+        }
+        SnippetGrouping.ApplyKeptJoins(joins, kept, repaired);
+
+        List<InfoCombined> cards = SnippetGrouping.Materialize(lines, joins, settings.Separator ?? "<br>",
+          (all, first, last) => describeSnippet(all, first, last, limits));
+
+        int snippets = 0;
+        foreach (InfoCombined card in cards) if (card.IsSnippet) snippets++;
+        Logger.Instance.info($"Snippet grouping (episode {epIdx + Settings.Instance.EpisodeStartNumber}): {lines.Count} lines -> {cards.Count} cards, {snippets} multi-line");
+
+        result.Add(cards);
+
+        int progress = Convert.ToInt32((epIdx + 1) * (100.0 / totalEpisodes));
+        dialogProgress.UpdateProgress(progress, $"Grouping lines into snippets: episode {epIdx + 1} of {totalEpisodes}");
+
+        if (dialogProgress.Cancel)
+        {
+          return null;
+        }
+      }
+
+      return result;
+    }
+
+
+    /// <summary>
+    /// Produce a full-index join vector for one episode according to the grouping mode.
+    /// AI mode falls back to the rules until a model is configured.
+    /// </summary>
+    public static bool[] computeJoins(List<InfoCombined> lines, SnippetMode mode, SnippetLimits limits, RuleGrouperOptions ruleOptions)
+    {
+      switch (mode)
+      {
+        case SnippetMode.Rules:
+          return RuleBasedGrouper.GroupEpisode(lines, limits, ruleOptions);
+
+        case SnippetMode.AI:
+          Logger.Instance.info("Snippet grouping: AI mode is not available yet, using the rule-based grouper.");
+          return RuleBasedGrouper.GroupEpisode(lines, limits, ruleOptions);
+
+        default:
+          return SnippetGrouping.NoJoins(lines.Count);
+      }
+    }
+
+
+    private static string describeSnippet(IReadOnlyList<InfoCombined> lines, int first, int last, SnippetLimits limits)
+    {
+      int ms = SnippetGrouping.TrimmedDurationMs(lines, first, last, limits);
+      return FormattableString.Invariant($"{last - first + 1} lines, {ms / 1000.0:0.0} s");
     }
 
 

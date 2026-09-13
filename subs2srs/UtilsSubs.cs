@@ -61,6 +61,23 @@ namespace subs2srs
 
 
     /// <summary>
+    /// The time to take a card's snapshot at: the midpoint of the line, or for a
+    /// multi-line snippet the midpoint of its first part (the midpoint of the
+    /// whole span could fall into a silence that gap removal cuts out).
+    /// </summary>
+    public static TimeSpan getSnapshotTime(InfoCombined comb)
+    {
+      if (comb.IsSnippet)
+      {
+        InfoCombined first = comb.Parts[0];
+        return getMidpointTime(first.Subs1.StartTime, first.Subs1.EndTime);
+      }
+
+      return getMidpointTime(comb.Subs1.StartTime, comb.Subs1.EndTime);
+    }
+
+
+    /// <summary>
     /// Get the difference/duration between the two provided times.
     /// </summary>
     public static TimeSpan getDurationTime(TimeSpan startTime, TimeSpan endTime)
