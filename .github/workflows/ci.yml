@@ -76,13 +76,20 @@ jobs:
         uses: msys2/setup-msys2@v2
         with:
           msystem: UCRT64
-          location: C:\msys64
+          release: false          # reuse the runner's preinstalled MSYS2 instead of downloading one
           update: false
           path-type: inherit
           install: mingw-w64-ucrt-x86_64-gtk4
       - name: Put GTK on PATH
         run: |
-          "C:\msys64\ucrt64\bin" | Out-File -FilePath $env:GITHUB_PATH -Append -Encoding utf8
+          $root = if ($env:MSYS2_LOCATION) { $env:MSYS2_LOCATION } else { 'C:\msys64' }
+          $bin = Join-Path $root 'ucrt64\bin'
+          if (-not (Test-Path (Join-Path $bin 'libgtk-4-1.dll'))) { throw "libgtk-4-1.dll not found in $bin" }
+          Write-Host "GTK from $bin"
+          $bin | Out-File -FilePath $env:GITHUB_PATH -Append -Encoding utf8
+          "MSYS2_ROOT=$root" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+          "XDG_DATA_DIRS=$root\ucrt64\share" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+          "GSETTINGS_SCHEMA_DIR=$root\ucrt64\share\glib-2.0\schemas" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
       - name: Install ffmpeg
         run: choco install ffmpeg -y --no-progress
       - name: Restore (locked)
@@ -96,8 +103,6 @@ jobs:
       - name: GTK UI tests
         env:
           GSK_RENDERER: cairo
-          XDG_DATA_DIRS: C:\msys64\ucrt64\share
-          GSETTINGS_SCHEMA_DIR: C:\msys64\ucrt64\share\glib-2.0\schemas
           SUBS2SRS_UITEST_ARTIFACTS: ${{ github.workspace }}\TestResults\screenshots
         run: dotnet test subs2srs.UiTests/subs2srs.UiTests.csproj -c Release --no-restore --logger trx --results-directory TestResults/ui
       - uses: actions/upload-artifact@v4

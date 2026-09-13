@@ -29,10 +29,15 @@ jobs:
         uses: msys2/setup-msys2@v2
         with:
           msystem: UCRT64
-          location: C:\msys64
+          release: false          # reuse the runner's preinstalled MSYS2 instead of downloading one
           update: false
           path-type: inherit
           install: mingw-w64-ucrt-x86_64-gtk4 mingw-w64-ucrt-x86_64-ntldd
+      - name: Locate MSYS2
+        run: |
+          $root = if ($env:MSYS2_LOCATION) { $env:MSYS2_LOCATION } else { 'C:\msys64' }
+          if (-not (Test-Path (Join-Path $root 'ucrt64\bin\libgtk-4-1.dll'))) { throw "libgtk-4-1.dll not found under $root" }
+          "MSYS2_ROOT=$root" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
 
       - name: Version from tag
         id: ver
@@ -47,7 +52,7 @@ jobs:
             -p:Version=${{ steps.ver.outputs.version }} -o out\win-x64
 
       - name: Bundle GTK runtime
-        run: pwsh dist/windows/bundle-gtk.ps1 -Msys2Root C:\msys64 -PublishDir out\win-x64
+        run: pwsh dist/windows/bundle-gtk.ps1 -Msys2Root $env:MSYS2_ROOT -PublishDir out\win-x64
 
       - name: Smoke test (clean environment)
         run: pwsh dist/windows/smoke.ps1 -PublishDir out\win-x64
