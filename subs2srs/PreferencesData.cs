@@ -47,6 +47,7 @@ namespace subs2srs
         public string AudioNormalizeArgs { get; set; } = PrefDefaults.AudioNormalizeArgs;
         public int LongClipWarningSeconds { get; set; } = PrefDefaults.LongClipWarningSeconds;
         public int MaxParallelTasks { get; set; } = PrefDefaults.MaxParallelTasks;
+        public string ToolsDir { get; set; } = PrefDefaults.ToolsDir;
 
         // ── Audio clips ──────────────────────────────────────────────────────
         public int DefaultAudioClipBitrate { get; set; } = PrefDefaults.DefaultAudioClipBitrate;

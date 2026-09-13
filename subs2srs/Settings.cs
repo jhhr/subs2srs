@@ -29,6 +29,7 @@ namespace subs2srs
   public static class PrefDefaults
   {
     public const int MaxParallelTasks = 0; // 0 = auto (Environment.ProcessorCount)
+    public const string ToolsDir = ""; // "" = search PATH only
     public const int MainWindowWidth = 614;
     public const int MainWindowHeight = 630;
     public const bool DefaultEnableAudioClipGeneration = true;
@@ -126,28 +127,105 @@ namespace subs2srs
 
   public static class ConstantSettings
   {
-    private static string FindInPath(string name)
+    // ── External tool lookup ───────────────────────────────────────────
+
+    /// <summary>
+    /// Candidate file names for a tool: the bare name, plus on Windows the
+    /// name with each PATHEXT extension (ffmpeg → ffmpeg, ffmpeg.EXE, …).
+    /// </summary>
+    private static IEnumerable<string> ToolCandidateNames(string name)
     {
-      foreach (var dir in (Environment.GetEnvironmentVariable("PATH") ?? "").Split(Path.PathSeparator))
+      yield return name;
+      if (!OperatingSystem.IsWindows() || Path.HasExtension(name))
+        yield break;
+      string pathExt = Environment.GetEnvironmentVariable("PATHEXT") ?? ".EXE;.COM;.BAT;.CMD";
+      foreach (var ext in pathExt.Split(';', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+        yield return name + ext;
+    }
+
+    private static string? FindToolInDir(string dir, string name)
+    {
+      if (string.IsNullOrWhiteSpace(dir)) return null;
+      try
       {
-        var full = Path.Combine(dir, name);
-        if (File.Exists(full)) return full;
+        foreach (var candidate in ToolCandidateNames(name))
+        {
+          string full = Path.Combine(dir, candidate);
+          if (File.Exists(full)) return full;
+        }
       }
-      return name;
+      catch (ArgumentException)
+      {
+        // Malformed PATH entry (illegal characters); ignore it.
+      }
+      return null;
+    }
+
+    /// <summary>
+    /// Search PATH for a tool. Returns the full path, or null when not found.
+    /// Honours PATHEXT on Windows and skips malformed PATH entries.
+    /// </summary>
+    internal static string? FindInPath(string name)
+    {
+      string path = Environment.GetEnvironmentVariable("PATH") ?? "";
+      foreach (var dir in path.Split(Path.PathSeparator, StringSplitOptions.RemoveEmptyEntries))
+      {
+        string? found = FindToolInDir(dir.Trim().Trim('"'), name);
+        if (found != null) return found;
+      }
+      return null;
+    }
+
+    /// <summary>
+    /// Resolve an external tool: the Tools Directory preference first,
+    /// then PATH. Returns null when the tool cannot be found.
+    /// </summary>
+    public static string? ResolveTool(string name)
+    {
+      return FindToolInDir(ToolsDir, name) ?? FindInPath(name);
+    }
+
+    /// <summary>
+    /// Like <see cref="ResolveTool"/> but falls back to the bare name so
+    /// callers can still hand it to Process.Start.
+    /// </summary>
+    public static string ResolveToolOrName(string name)
+    {
+      return ResolveTool(name) ?? name;
+    }
+
+    public static bool IsFFmpegAvailable => ResolveTool(ExeFFmpeg) != null;
+
+    /// <summary>
+    /// User-facing hint shown when ffmpeg cannot be found.
+    /// </summary>
+    public static string FFmpegMissingMessage
+    {
+      get
+      {
+        string hint = OperatingSystem.IsWindows()
+          ? "Install it with:\n    winget install Gyan.FFmpeg\n"
+            + "or download a build from https://ffmpeg.org/download.html and either add its bin folder to PATH "
+            + "or set \"Tools Directory\" in Preferences."
+          : OperatingSystem.IsMacOS()
+            ? "Install it with Homebrew (brew install ffmpeg) or set \"Tools Directory\" in Preferences."
+            : "Install it with your package manager (e.g. sudo apt install ffmpeg) or set \"Tools Directory\" in Preferences.";
+        return "ffmpeg was not found. subs2srs needs ffmpeg to generate audio, snapshots and video clips.\n\n" + hint;
+      }
     }
 
     // ── Immutable (no setter) ──────────────────────────────────────────
 
     public static string SaveExt { get; } = "s2s";
     public static string HelpPage { get; } = "http://subs2srs.sourceforge.net/";
-    public static string LogDir { get; } = Path.Combine(
+    public static string LogDir { get; internal set; } = Path.Combine(
       Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
       "subs2srs", "Logs") + Path.DirectorySeparatorChar;
     public static int MaxLogFiles { get; } = 10;
 
     public static string ExeFFmpeg { get; } = "ffmpeg";
-    public static string PathFFmpegFullExe { get; } = FindInPath("ffmpeg");
-    public static string PathFFmpegExe { get; } = FindInPath("ffmpeg");
+    public static string PathFFmpegFullExe => ResolveToolOrName(ExeFFmpeg);
+    public static string PathFFmpegExe => ResolveToolOrName(ExeFFmpeg);
     public static string PathFFmpegPresetsFull { get; } = Path.Combine(
       UtilsCommon.getAppDir(true), "presets");
 
@@ -173,18 +251,18 @@ namespace subs2srs
 
     public static string NormalizeAudioExe { get; } = "mp3gain";
     public static string PathNormalizeAudioExeRel { get; } = "mp3gain";
-    public static string PathNormalizeAudioExeFull { get; } = FindInPath("mp3gain");
-    public static string PathSubsReTimerFull { get; } = FindInPath("SubsReTimer");
+    public static string PathNormalizeAudioExeFull => ResolveToolOrName(NormalizeAudioExe);
+    public static string PathSubsReTimerFull => ResolveToolOrName("SubsReTimer");
 
     public static string ExeMkvInfo { get; } = "mkvinfo";
     public static string PathMkvDirRel { get; } = "";
     public static string PathMkvDirFull { get; } = "";
     public static string PathMkvInfoExeRel { get; } = "mkvinfo";
-    public static string PathMkvInfoExeFull { get; } = FindInPath("mkvinfo");
+    public static string PathMkvInfoExeFull => ResolveToolOrName(ExeMkvInfo);
 
     public static string ExeMkvExtract { get; } = "mkvextract";
     public static string PathMkvExtractExeRel { get; } = "mkvextract";
-    public static string PathMkvExtractExeFull { get; } = FindInPath("mkvextract");
+    public static string PathMkvExtractExeFull => ResolveToolOrName(ExeMkvExtract);
 
     public static string SettingsFilename { get; set; } = Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
@@ -199,6 +277,16 @@ namespace subs2srs
     {
         get => Prefs.MaxParallelTasks;
         set => Prefs.MaxParallelTasks = value;
+    }
+
+    /// <summary>
+    /// Optional directory searched before PATH for ffmpeg, ffprobe, ffplay,
+    /// mkvinfo, mkvextract and mp3gain. Empty = PATH only.
+    /// </summary>
+    public static string ToolsDir
+    {
+        get => Prefs.ToolsDir ?? "";
+        set => Prefs.ToolsDir = value ?? "";
     }
 
     public static int EffectiveParallelism => MaxParallelTasks > 0

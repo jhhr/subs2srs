@@ -466,7 +466,7 @@ namespace subs2srs
 
       if (dialogProgress == null)
       {
-        UtilsCommon.startFFmpeg(ffmpegConvertArgs, true, true);
+        UtilsCommon.startFFmpeg(ffmpegConvertArgs, false, true);
       }
       else
       {
@@ -668,19 +668,8 @@ namespace subs2srs
     /// </summary>
     private static List<InfoStream> getAudioStreamsViaProbe(string file)
     {
-      var psi = new ProcessStartInfo
-      {
-        FileName = "ffprobe",
-        Arguments = $"-v quiet -print_format json -show_streams -select_streams a \"{file}\"",
-        UseShellExecute = false,
-        RedirectStandardOutput = true,
-        RedirectStandardError = true,
-        CreateNoWindow = true
-      };
-
-      using var proc = Process.Start(psi);
-      string json = proc.StandardOutput.ReadToEnd();
-      proc.WaitForExit(10000);
+      string json = UtilsCommon.getFFprobeStdout(
+        $"-v quiet -print_format json -show_streams -select_streams a \"{file}\"");
 
       var streams = new List<InfoStream>();
       using var doc = System.Text.Json.JsonDocument.Parse(json);

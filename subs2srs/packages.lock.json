@@ -1,0 +1,130 @@
+{
+  "version": 1,
+  "dependencies": {
+    "net10.0": {
+      "GirCore.Gtk-4.0": {
+        "type": "Direct",
+        "requested": "[0.7.0, )",
+        "resolved": "0.7.0",
+        "contentHash": "CUNtwNQNUEvug70ird+LFaH4bhuKMmIygkeAbk6RdP/m1EOycRt2+tX4s/2ImnwRNl5rnWt+PSEeujYUnhka2Q==",
+        "dependencies": {
+          "GirCore.Gdk-4.0": "0.7.0",
+          "GirCore.Gsk-4.0": "0.7.0"
+        }
+      },
+      "TagLibSharp": {
+        "type": "Direct",
+        "requested": "[2.3.0, )",
+        "resolved": "2.3.0",
+        "contentHash": "Qo4z6ZjnIfbR3Us1Za5M2vQ97OWZPmODvVmepxZ8XW0UIVLGdO2T63/N3b23kCcyiwuIe0TQvMEQG8wUCCD1mA=="
+      },
+      "GirCore.Cairo-1.0": {
+        "type": "Transitive",
+        "resolved": "0.7.0",
+        "contentHash": "pAfml9ObPSnxRM6GQEVlGEQWxd3Rw7/k0Y0U+Q5+ja8Pa8m9LdDRDhlNrDyy783NrxyoI1amTcp4aTSfLYkfiA==",
+        "dependencies": {
+          "GirCore.GObject-2.0": "0.7.0"
+        }
+      },
+      "GirCore.FreeType2-2.0": {
+        "type": "Transitive",
+        "resolved": "0.7.0",
+        "contentHash": "SLDUDCw2XFxBph5E+xLRkzpCqz+A5JygaNZ+U4jotI2tBsBNQG9qRv85EC5lPtPJa7+XVf1BbWTyV0O/R8tojA==",
+        "dependencies": {
+          "GirCore.GLib-2.0": "0.7.0",
+          "GirCore.GObject-2.0": "0.7.0"
+        }
+      },
+      "GirCore.Gdk-4.0": {
+        "type": "Transitive",
+        "resolved": "0.7.0",
+        "contentHash": "zjBRx2ZY8DDe7Ymr/ID2Xwk05TT0aWslIRbR5tmjSfSfT9NKQ1COw2l0idI1cl0mc8JtK3zWeWg/9RIZqJH6zA==",
+        "dependencies": {
+          "GirCore.Cairo-1.0": "0.7.0",
+          "GirCore.GdkPixbuf-2.0": "0.7.0",
+          "GirCore.Gio-2.0": "0.7.0",
+          "GirCore.Pango-1.0": "0.7.0",
+          "GirCore.PangoCairo-1.0": "0.7.0"
+        }
+      },
+      "GirCore.GdkPixbuf-2.0": {
+        "type": "Transitive",
+        "resolved": "0.7.0",
+        "contentHash": "1OHjfGeTvYG6iF7dcdFlC++JurO47VO0Fmw9CkUNk4O6BXr2qHogZKWpnII4AkCiZJlA5sjoeTrxxS1QfIAvVw==",
+        "dependencies": {
+          "GirCore.Gio-2.0": "0.7.0"
+        }
+      },
+      "GirCore.Gio-2.0": {
+        "type": "Transitive",
+        "resolved": "0.7.0",
+        "contentHash": "E0Ubm/FjAgBBW5o4m33TIsnFe9McoOne8bHo6c8mi8ajuDMpAPMhboBgIdQWDvPEMcSkLrdg/NR3kRTUeS/2KQ==",
+        "dependencies": {
+          "GirCore.GObject-2.0": "0.7.0"
+        }
+      },
+      "GirCore.GLib-2.0": {
+        "type": "Transitive",
+        "resolved": "0.7.0",
+        "contentHash": "RaFYLZTRpKYRJrvMa1/ctrQQfAX5rTpZzFRudCp9AVQOdOYQl3LYqVAqc4otFTD6bIXpoV0msm7azGCfyF7XbQ=="
+      },
+      "GirCore.GObject-2.0": {
+        "type": "Transitive",
+        "resolved": "0.7.0",
+        "contentHash": "95ehT1EbreYDFAQJposjK+0olBcWjLSs3hie3j8lL3MtCgrAMFzQuJU8Qdz0jAUl9WX2a0pb5mv1ZkUCFAbbKA==",
+        "dependencies": {
+          "GirCore.GLib-2.0": "0.7.0"
+        }
+      },
+      "GirCore.Graphene-1.0": {
+        "type": "Transitive",
+        "resolved": "0.7.0",
+        "contentHash": "MI9tWmhQYQr/8mKnETDfNm7owLLl59fB8SZxGb6r+twED8Ht+dVPYRayfnUHZXA2RkI9IcaFBgLoSXMYRGU4CA==",
+        "dependencies": {
+          "GirCore.GObject-2.0": "0.7.0"
+        }
+      },
+      "GirCore.Gsk-4.0": {
+        "type": "Transitive",
+        "resolved": "0.7.0",
+        "contentHash": "rcwMMx4UIETIzhepudeOmz6Iy9nNofwcs+cpkaO3FJ169aeuY/4wAjR85ErvIHpbntFQ1MQ8Jqk0ILH2/qQdlQ==",
+        "dependencies": {
+          "GirCore.Gdk-4.0": "0.7.0",
+          "GirCore.Graphene-1.0": "0.7.0"
+        }
+      },
+      "GirCore.HarfBuzz-0.0": {
+        "type": "Transitive",
+        "resolved": "0.7.0",
+        "contentHash": "Agiqbvs32egK/XyB3waa54W3qPNgyEqE5laEdjWY8GfzFp5Dxw/pYQJQoNVaNPChQCtMdTKTGP9EdbUiw4FAMQ==",
+        "dependencies": {
+          "GirCore.FreeType2-2.0": "0.7.0",
+          "GirCore.GObject-2.0": "0.7.0"
+        }
+      },
+      "GirCore.Pango-1.0": {
+        "type": "Transitive",
+        "resolved": "0.7.0",
+        "contentHash": "f4kMumRl0rdPaiffNdXXM/vt0FLaHbNG44MYtFK9c+danngo7naIiwizkWJQMUGPFTNglrP/nSgN8mobOiCt3w==",
+        "dependencies": {
+          "GirCore.Cairo-1.0": "0.7.0",
+          "GirCore.GObject-2.0": "0.7.0",
+          "GirCore.Gio-2.0": "0.7.0",
+          "GirCore.HarfBuzz-0.0": "0.7.0"
+        }
+      },
+      "GirCore.PangoCairo-1.0": {
+        "type": "Transitive",
+        "resolved": "0.7.0",
+        "contentHash": "cgSLsyORj0TxBZVchzfdu8mp7kZXoUwAfkbKMoKSDhgo/HVmaOHulXZZU5iWU6PZ9Bvzk+ks3lSyjDHCuK+IrQ==",
+        "dependencies": {
+          "GirCore.Cairo-1.0": "0.7.0",
+          "GirCore.GObject-2.0": "0.7.0",
+          "GirCore.Pango-1.0": "0.7.0"
+        }
+      }
+    },
+    "net10.0/linux-x64": {},
+    "net10.0/win-x64": {}
+  }
+}

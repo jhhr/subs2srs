@@ -89,7 +89,7 @@ namespace subs2srs
         TimeSpan entireClipDuration = UtilsSubs.getDurationTime(entireClipStartTime, entireClipEndTime);
         dialogProgress.SetDuration(entireClipDuration);
 
-        string tempVideoFilename = Path.GetTempPath() + ConstantSettings.TempVideoFilename + videoExtension;
+        string tempVideoFilename = Path.Combine(Path.GetTempPath(), ConstantSettings.TempVideoFilename + videoExtension);
 
         if (Settings.Instance.VideoClips.IPodSupport)
         {

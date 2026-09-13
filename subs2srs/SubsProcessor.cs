@@ -33,6 +33,8 @@ namespace subs2srs
         public async Task StartAsync(IProgressReporter dialogProgress,
             List<List<InfoCombined>> combinedAll = null)
         {
+            UtilsCommon.RegisterEncodings();
+
             try { createOutputDirStructure(); }
             catch
             {
