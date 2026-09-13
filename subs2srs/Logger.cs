@@ -289,6 +289,7 @@ namespace subs2srs
 
       var(new { ConstantSettings.SaveExt });
       var(new { HelpFile = ConstantSettings.HelpPage });
+      var(new { ConstantSettings.ToolsDir });
       var(new { ConstantSettings.ExeFFmpeg });
       var(new { ConstantSettings.PathFFmpegExe });
       var(new { ConstantSettings.PathFFmpegFullExe });

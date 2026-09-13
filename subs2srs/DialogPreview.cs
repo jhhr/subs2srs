@@ -89,9 +89,12 @@ namespace subs2srs
             SetTitle("Preview");
             SetDefaultSize(1000, 750);
 
-            // Hide instead of destroying on close
+            // Hide instead of destroying on close, except when CleanupAndDestroy
+            // asked for a real destroy (app exit / owner disposing the preview).
             OnCloseRequest += (s, e) =>
             {
+                if (_destroyed)
+                    return false; // allow destruction
                 SetVisible(false);
                 return true; // prevent destruction
             };
@@ -788,14 +791,18 @@ namespace subs2srs
 
             try
             {
-                string opener;
-                if (OperatingSystem.IsLinux())
-                    opener = "xdg-open";
-                else if (OperatingSystem.IsMacOS())
-                    opener = "open";
-                else
-                    opener = "explorer";
+                if (OperatingSystem.IsWindows())
+                {
+                    // ShellExecute opens the file with its registered viewer.
+                    Process.Start(new ProcessStartInfo
+                    {
+                        FileName = _currentSnapshotPath,
+                        UseShellExecute = true
+                    });
+                    return;
+                }
 
+                string opener = OperatingSystem.IsMacOS() ? "open" : "xdg-open";
                 Process.Start(new ProcessStartInfo
                 {
                     FileName = opener,
@@ -1117,7 +1124,7 @@ namespace subs2srs
                 try
                 {
                     var p = new Process();
-                    p.StartInfo.FileName = "ffplay";
+                    p.StartInfo.FileName = ConstantSettings.ResolveToolOrName("ffplay");
                     p.StartInfo.Arguments =
                         $"-nodisp -autoexit -loglevel quiet \"{wav}\"";
                     p.StartInfo.UseShellExecute = false;

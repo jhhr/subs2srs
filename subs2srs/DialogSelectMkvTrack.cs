@@ -43,6 +43,19 @@ namespace subs2srs
 
         public string ExtractedFile { get; private set; } = "";
 
+        /// <summary>
+        /// The track currently chosen in the drop-down, or null when none.
+        /// </summary>
+        internal MkvTrack? SelectedTrack
+        {
+            get
+            {
+                uint sel = _dropTrack.GetSelected();
+                if (sel == uint.MaxValue || sel >= (uint)_tracks.Count) return null;
+                return _tracks[(int)sel];
+            }
+        }
+
         // Result: true = OK (extracted), false = cancelled
         private bool? _result;
         private GLib.MainLoop _loop;
@@ -137,7 +150,7 @@ namespace subs2srs
                 ? ConstantSettings.TempMkvExtractSubs2Filename
                 : ConstantSettings.TempMkvExtractSubs1Filename;
 
-            string extractedFile = $"{IOPath.GetTempPath()}{tempFileName}.{selectedTrack.Extension}";
+            string extractedFile = IOPath.Combine(IOPath.GetTempPath(), $"{tempFileName}.{selectedTrack.Extension}");
 
             // Pulse timer using GLib.Functions.TimeoutAdd
             uint pulseTimer = GLib.Functions.TimeoutAdd(0, 100, () =>

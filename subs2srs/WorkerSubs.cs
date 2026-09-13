@@ -1102,7 +1102,7 @@ namespace subs2srs
 
       bool subs1ContainsVobsubs = UtilsSubs.filePatternContainsVobsubs(Settings.Instance.Subs[0].FilePattern);
       bool subs2ContainsVobsubs = UtilsSubs.filePatternContainsVobsubs(Settings.Instance.Subs[1].FilePattern);
-      string tempPreviewDir = Path.GetTempPath() + ConstantSettings.TempPreviewDirName;
+      string tempPreviewDir = Path.Combine(Path.GetTempPath(), ConstantSettings.TempPreviewDirName);
 
       foreach (List<InfoCombined> combArray in workerVars.CombinedAll)
       {

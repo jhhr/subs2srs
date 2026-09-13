@@ -1,10 +1,16 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
-    <OutputType>Exe</OutputType>
+    <!-- WinExe on Windows so no console window flashes; diagnostics go to the log file. -->
+    <OutputType Condition="'$(RuntimeIdentifier)' == 'win-x64'">WinExe</OutputType>
+    <OutputType Condition="'$(RuntimeIdentifier)' != 'win-x64'">Exe</OutputType>
     <TargetFramework>net10.0</TargetFramework>
+    <RuntimeIdentifiers>linux-x64;win-x64</RuntimeIdentifiers>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <RestorePackagesWithLockFile>true</RestorePackagesWithLockFile>
+    <ApplicationManifest>app.manifest</ApplicationManifest>
+    <ApplicationIcon Condition="Exists('$(MSBuildProjectDirectory)/../assets/subs2srs.ico')">../assets/subs2srs.ico</ApplicationIcon>
     <EnableVobSub>false</EnableVobSub>
     <DefineConstants Condition="'$(EnableVobSub)' == 'true'">$(DefineConstants);ENABLE_VOBSUB</DefineConstants>
 
@@ -20,6 +26,7 @@
 
   <ItemGroup>
     <InternalsVisibleTo Include="subs2srs.Tests" />
+    <InternalsVisibleTo Include="subs2srs.UiTests" />
   </ItemGroup>
 
   <ItemGroup>

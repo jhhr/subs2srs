@@ -1,0 +1,76 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+env:
+  DOTNET_NOLOGO: 1
+  DOTNET_CLI_TELEMETRY_OPTOUT: 1
+
+jobs:
+  windows-zip:
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: '10.0.x'
+          cache: true
+          cache-dependency-path: '**/packages.lock.json'
+      - name: Install GTK4 + ntldd (MSYS2 UCRT64)
+        uses: msys2/setup-msys2@v2
+        with:
+          msystem: UCRT64
+          release: false          # reuse the runner's preinstalled MSYS2 instead of downloading one
+          update: false
+          path-type: inherit
+          install: mingw-w64-ucrt-x86_64-gtk4 mingw-w64-ucrt-x86_64-ntldd
+      - name: Locate MSYS2
+        run: |
+          $root = if ($env:MSYS2_LOCATION) { $env:MSYS2_LOCATION } else { 'C:\msys64' }
+          if (-not (Test-Path (Join-Path $root 'ucrt64\bin\libgtk-4-1.dll'))) { throw "libgtk-4-1.dll not found under $root" }
+          "MSYS2_ROOT=$root" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+
+      - name: Version from tag
+        id: ver
+        run: |
+          $v = "${{ github.ref_name }}".TrimStart('v')
+          "version=$v" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+
+      - name: Publish (self-contained win-x64)
+        run: |
+          dotnet restore subs2srs/subs2srs.csproj --locked-mode
+          dotnet publish subs2srs/subs2srs.csproj -c Release -r win-x64 --self-contained true `
+            -p:Version=${{ steps.ver.outputs.version }} -o out\win-x64
+
+      - name: Bundle GTK runtime
+        run: pwsh dist/windows/bundle-gtk.ps1 -Msys2Root $env:MSYS2_ROOT -PublishDir out\win-x64
+
+      - name: Smoke test (clean environment)
+        run: pwsh dist/windows/smoke.ps1 -PublishDir out\win-x64
+
+      - name: Zip
+        run: |
+          Copy-Item LICENSE, README.md, CHANGELOG.md out\win-x64\
+          $zip = "subs2srs-${{ steps.ver.outputs.version }}-win-x64.zip"
+          Compress-Archive -Path out\win-x64\* -DestinationPath $zip -CompressionLevel Optimal
+          Get-Item $zip | Select-Object Name, Length
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: subs2srs-win-x64
+          path: subs2srs-*-win-x64.zip
+
+      - name: Attach to GitHub release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: subs2srs-*-win-x64.zip
+          generate_release_notes: true

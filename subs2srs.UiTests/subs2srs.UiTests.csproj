@@ -5,6 +5,7 @@
     <Nullable>enable</Nullable>
     <IsPackable>false</IsPackable>
     <RestorePackagesWithLockFile>true</RestorePackagesWithLockFile>
+    <!-- Needs a display: run under xvfb-run on Linux; on Windows any interactive session works. -->
   </PropertyGroup>
 
   <ItemGroup>
@@ -18,5 +19,10 @@
 
   <ItemGroup>
     <ProjectReference Include="../subs2srs/subs2srs.csproj" />
+  </ItemGroup>
+
+  <!-- Share the GTK-free harness with the unit test project. -->
+  <ItemGroup>
+    <Compile Include="../subs2srs.Tests/Harness/*.cs" Link="Harness/Shared/%(Filename)%(Extension)" />
   </ItemGroup>
 </Project>

@@ -141,7 +141,7 @@ namespace subs2srs
           this.videoProgess = true;
           this.frame = Convert.ToInt32(match.Groups["Frame"].ToString().Trim());
           this.fps = Convert.ToInt32(match.Groups["FPS"].ToString().Trim());
-          this.q = Convert.ToDouble(match.Groups["Q"].ToString().Trim());
+          this.q = Convert.ToDouble(match.Groups["Q"].ToString().Trim(), System.Globalization.CultureInfo.InvariantCulture);
         }
         else
         {
@@ -156,7 +156,7 @@ namespace subs2srs
         int centiseconds = Convert.ToInt32(match.Groups["CentiSeconds"].ToString().Trim());
         this.time = new TimeSpan(0, hours, minutes, seconds, centiseconds * 10);
 
-        this.bitrate = Convert.ToDouble(match.Groups["Bitrate"].ToString().Trim());
+        this.bitrate = Convert.ToDouble(match.Groups["Bitrate"].ToString().Trim(), System.Globalization.CultureInfo.InvariantCulture);
       }
       catch
       {

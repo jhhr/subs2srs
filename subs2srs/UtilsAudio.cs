@@ -89,12 +89,12 @@ namespace subs2srs
 
       // Example format:
       // -vn -y -i "G:\Temp\inputs.mkv" -ac 2 -b:a 128k "output.mp3"
-      ffmpegAudioProgArgs = String.Format("-vn -y -i \"{1}\" -ac 2 {1} -threads 0 \"{2}\"",
+      ffmpegAudioProgArgs = String.Format("-vn -y -i \"{0}\" -ac 2 {1} -threads 0 \"{2}\"",
                                           inFile,          // {0}
                                           audioBitrateArg, // {1}
                                           outFile);        // {2}
 
-      UtilsCommon.startFFmpeg(ffmpegAudioProgArgs, true, true);
+      UtilsCommon.startFFmpeg(ffmpegAudioProgArgs, false, true);
     }
 
 

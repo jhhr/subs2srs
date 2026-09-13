@@ -86,6 +86,50 @@ namespace subs2srs
             return false;
         }
 
+        /// <summary>
+        /// Same as pressing OK: persist the edited values and close.
+        /// </summary>
+        internal void AcceptAndClose()
+        {
+            SavePreferences();
+            _responseId = 1;
+            Close();
+        }
+
+        /// <summary>
+        /// Set a property row by its display key (e.g. "Max Parallel Tasks").
+        /// Accepts bool, int or string according to the row type. Used by UI tests.
+        /// </summary>
+        internal void SetPropertyValue(string key, object value)
+        {
+            var item = _items.FirstOrDefault(i => !i.IsCategory && i.PropKey == key)
+                ?? throw new ArgumentException($"Unknown preference row '{key}'", nameof(key));
+
+            if (item.IsBool)
+            {
+                bool b = Convert.ToBoolean(value);
+                item.BoolValue = b;
+                propTable[key] = b;
+            }
+            else if (item.IsInt)
+            {
+                int i = Convert.ToInt32(value);
+                item.StrValue = i.ToString();
+                propTable[key] = i;
+            }
+            else
+            {
+                string s = Convert.ToString(value) ?? "";
+                item.StrValue = s;
+                propTable[key] = s;
+            }
+        }
+
+        /// <summary>
+        /// Read the current (unsaved) value of a property row by display key.
+        /// </summary>
+        internal object GetPropertyValue(string key) => propTable[key];
+
         // ── PROPERTY TABLE (same data as original) ──────────────────────────
 
         private void BuildPropTable()
@@ -704,6 +748,14 @@ namespace subs2srs
                 + "Range: 0-128.",
                 PrefDefaults.MaxParallelTasks));
             propTable["Max Parallel Tasks"] = ConstantSettings.MaxParallelTasks;
+
+            // tools_dir
+            propTable.Properties.Add(new PropertySpec("Tools Directory", typeof(string),
+                "Misc",
+                "Directory containing ffmpeg, ffprobe, ffplay, mkvinfo, mkvextract and mp3gain.\n\n"
+                + "Searched before PATH. Leave empty to use PATH only.",
+                PrefDefaults.ToolsDir));
+            propTable["Tools Directory"] = ConstantSettings.ToolsDir;
         }
 
         // ── GTK UI ──────────────────────────────────────────────────────────
@@ -797,12 +849,7 @@ namespace subs2srs
             actionBox.Append(btnCancel);
 
             var btnOk = Gtk.Button.NewWithLabel("OK");
-            btnOk.OnClicked += (s, e) =>
-            {
-                SavePreferences();
-                _responseId = 1;
-                Close();
-            };
+            btnOk.OnClicked += (s, e) => AcceptAndClose();
             actionBox.Append(btnOk);
 
             vbox.Append(actionBox);
@@ -1274,6 +1321,7 @@ namespace subs2srs
                 UtilsCommon.checkRange((int)propTable["Long Clip Warning"], 0, 99999, PrefDefaults.LongClipWarningSeconds);
             ConstantSettings.MaxParallelTasks =
                 UtilsCommon.checkRange((int)propTable["Max Parallel Tasks"], 0, 128, PrefDefaults.MaxParallelTasks);
+            ConstantSettings.ToolsDir = getStr("Tools Directory").Trim();
 
             PrefIO.Write();
         }

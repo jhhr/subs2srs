@@ -3,27 +3,111 @@ name: CI
 on:
   push:
     paths:
-      - 'subs2srs/**/*.cs'
-      - 'subs2srs/subs2srs.csproj'
-      - 'subs2srs.Tests/**/*.cs'
-      - 'subs2srs.Tests/subs2srs.Tests.csproj'
+      - 'subs2srs/**'
+      - 'subs2srs.Tests/**'
+      - 'subs2srs.UiTests/**'
+      - 'dist/**'
+      - 'Makefile'
       - '.github/workflows/ci.yml'
   pull_request:
     paths:
-      - 'subs2srs/**/*.cs'
-      - 'subs2srs/subs2srs.csproj'
-      - 'subs2srs.Tests/**/*.cs'
-      - 'subs2srs.Tests/subs2srs.Tests.csproj'
+      - 'subs2srs/**'
+      - 'subs2srs.Tests/**'
+      - 'subs2srs.UiTests/**'
+      - 'dist/**'
+      - 'Makefile'
       - '.github/workflows/ci.yml'
 
+env:
+  DOTNET_NOLOGO: 1
+  DOTNET_CLI_TELEMETRY_OPTOUT: 1
+
 jobs:
-  build-and-test:
+  linux:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
       - uses: actions/setup-dotnet@v5
         with:
           dotnet-version: '10.0.x'
-      - run: sudo apt-get update && sudo apt-get install -y libgtk-3-dev
-      - run: dotnet build subs2srs/subs2srs.csproj -c Release
-      - run: dotnet test subs2srs.Tests/subs2srs.Tests.csproj -c Release
+          cache: true
+          cache-dependency-path: '**/packages.lock.json'
+      - name: Install GTK4, Xvfb, fonts, ffmpeg
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends libgtk-4-1 xvfb fonts-dejavu-core ffmpeg
+      - name: Restore (locked)
+        run: |
+          dotnet restore subs2srs/subs2srs.csproj --locked-mode
+          dotnet restore subs2srs.Tests/subs2srs.Tests.csproj --locked-mode
+          dotnet restore subs2srs.UiTests/subs2srs.UiTests.csproj --locked-mode
+      - run: dotnet build subs2srs/subs2srs.csproj -c Release --no-restore
+      - name: Unit + card-generation tests
+        run: dotnet test subs2srs.Tests/subs2srs.Tests.csproj -c Release --no-restore --logger trx --results-directory TestResults/unit
+      - name: GTK UI tests (Xvfb)
+        env:
+          GDK_BACKEND: x11
+          GSK_RENDERER: cairo
+          SUBS2SRS_UITEST_ARTIFACTS: ${{ github.workspace }}/TestResults/screenshots
+        run: |
+          xvfb-run -a -s "-screen 0 1280x1024x24" \
+            dotnet test subs2srs.UiTests/subs2srs.UiTests.csproj -c Release --no-restore \
+              --logger trx --results-directory TestResults/ui
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: test-results-linux
+          path: TestResults/**
+          if-no-files-found: ignore
+
+  windows:
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: '10.0.x'
+          cache: true
+          cache-dependency-path: '**/packages.lock.json'
+      - name: Install GTK4 (MSYS2 UCRT64)
+        uses: msys2/setup-msys2@v2
+        with:
+          msystem: UCRT64
+          release: false          # reuse the runner's preinstalled MSYS2 instead of downloading one
+          update: false
+          path-type: inherit
+          install: mingw-w64-ucrt-x86_64-gtk4
+      - name: Put GTK on PATH
+        run: |
+          $root = if ($env:MSYS2_LOCATION) { $env:MSYS2_LOCATION } else { 'C:\msys64' }
+          $bin = Join-Path $root 'ucrt64\bin'
+          if (-not (Test-Path (Join-Path $bin 'libgtk-4-1.dll'))) { throw "libgtk-4-1.dll not found in $bin" }
+          Write-Host "GTK from $bin"
+          $bin | Out-File -FilePath $env:GITHUB_PATH -Append -Encoding utf8
+          "MSYS2_ROOT=$root" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+          "XDG_DATA_DIRS=$root\ucrt64\share" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+          "GSETTINGS_SCHEMA_DIR=$root\ucrt64\share\glib-2.0\schemas" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+      - name: Install ffmpeg
+        run: choco install ffmpeg -y --no-progress
+      - name: Restore (locked)
+        run: |
+          dotnet restore subs2srs/subs2srs.csproj --locked-mode
+          dotnet restore subs2srs.Tests/subs2srs.Tests.csproj --locked-mode
+          dotnet restore subs2srs.UiTests/subs2srs.UiTests.csproj --locked-mode
+      - run: dotnet build subs2srs/subs2srs.csproj -c Release --no-restore
+      - name: Unit + card-generation tests
+        run: dotnet test subs2srs.Tests/subs2srs.Tests.csproj -c Release --no-restore --logger trx --results-directory TestResults/unit
+      - name: GTK UI tests
+        env:
+          GSK_RENDERER: cairo
+          SUBS2SRS_UITEST_ARTIFACTS: ${{ github.workspace }}\TestResults\screenshots
+        run: dotnet test subs2srs.UiTests/subs2srs.UiTests.csproj -c Release --no-restore --logger trx --results-directory TestResults/ui
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: test-results-windows
+          path: TestResults/**
+          if-no-files-found: ignore

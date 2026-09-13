@@ -19,6 +19,7 @@
 
 using System;
 using System.IO;
+using System.Text;
 using System.Threading;
 
 namespace subs2srs
@@ -31,6 +32,13 @@ namespace subs2srs
         [STAThread]
         static int Main(string[] args)
         {
+            // Bundled GTK data on Windows; must precede any GTK/GLib call.
+            WindowsRuntimeSetup.Apply();
+
+            // Legacy code pages (Shift-JIS, GBK, EUC-KR, Windows-125x …) are not
+            // part of .NET Core by default; the subtitle encoding combo offers them.
+            UtilsCommon.RegisterEncodings();
+
             AppDomain.CurrentDomain.UnhandledException += (_, e) =>
             {
                 var ex = e.ExceptionObject as Exception;
@@ -61,6 +69,9 @@ namespace subs2srs
             UtilsMsg.OnShowConfirm = (msg, title) =>
                 InvokeOnMainWithResult(() => ShowConfirmDialog(msg, title));
 
+            // Capture GLib/GTK warnings in the log file (no console under WinExe).
+            GLibLogForwarder.Install();
+
             _app = Gtk.Application.New("org.subs2srs.app", Gio.ApplicationFlags.FlagsNone);
 
             _app.OnActivate += OnAppActivate;
@@ -80,16 +91,12 @@ namespace subs2srs
             SynchronizationContext.SetSynchronizationContext(
                 new GtkSynchronizationContext());
 
-            // GLibLogFilter suppressed toggle_ref warnings specific to GtkSharp.
-            // Gir.Core does not use toggle_ref, so the filter is no longer needed.
-            // GLibLogFilter.Install();  // removed — not needed with Gir.Core
-
             var win = new MainWindow(_app);
             win.Show();
         }
 
         /// <summary>
-        /// Create XDG directories on first run.
+        /// Create the per-user app directories on first run.
         /// Must be called before Logger or PrefIO are accessed.
         /// Preferences file is created automatically by PrefIO.read().
         /// </summary>
@@ -97,12 +104,12 @@ namespace subs2srs
         {
             try
             {
-                // ~/.config/subs2srs/
+                // Linux: ~/.config/subs2srs/   Windows: %APPDATA%\subs2srs\
                 string? configDir = Path.GetDirectoryName(ConstantSettings.SettingsFilename);
                 if (!string.IsNullOrEmpty(configDir))
                     Directory.CreateDirectory(configDir); // no-op if exists
 
-                // ~/.local/share/subs2srs/Logs/
+                // Linux: ~/.local/share/subs2srs/Logs/   Windows: %LOCALAPPDATA%\subs2srs\Logs\
                 if (!string.IsNullOrEmpty(ConstantSettings.LogDir))
                     Directory.CreateDirectory(ConstantSettings.LogDir); // no-op if exists
             }

@@ -43,11 +43,11 @@ namespace subs2srs
     public class MainWindow : Gtk.ApplicationWindow
     {
         // ── Main tab fields ─────────────────────────────────────────────────
-        private Gtk.Entry _txtSubs1;
-        private Gtk.Entry _txtSubs2;
-        private Gtk.Entry _txtVideo;
-        private Gtk.Entry _txtOutputDir;
-        private Gtk.Entry _txtDeckName;
+        internal Gtk.Entry _txtSubs1;
+        internal Gtk.Entry _txtSubs2;
+        internal Gtk.Entry _txtVideo;
+        internal Gtk.Entry _txtOutputDir;
+        internal Gtk.Entry _txtDeckName;
         private Gtk.SpinButton _spinEpisodeStart;
         private Gtk.SpinButton _spinEpisodeEnd;
         private Gtk.DropDown _comboEncodingSubs1;
@@ -61,7 +61,7 @@ namespace subs2srs
         private Gtk.CheckButton _chkTimeShift;
         private Gtk.SpinButton _spinTimeShiftSubs1;
         private Gtk.SpinButton _spinTimeShiftSubs2;
-        private Gtk.CheckButton _chkSpan;
+        internal Gtk.CheckButton _chkSpan;
         private Gtk.Entry _txtSpanStart;
         private Gtk.Entry _txtSpanEnd;
 
@@ -74,7 +74,7 @@ namespace subs2srs
         private readonly Dictionary<nint, ShiftRuleRef> _shiftRefMap = new();
 
         // ── Audio tab fields ────────────────────────────────────────────────
-        private Gtk.CheckButton _chkGenerateAudio;
+        internal Gtk.CheckButton _chkGenerateAudio;
         private Gtk.CheckButton _radioAudioFromVideo;
         private Gtk.CheckButton _radioAudioExisting;
         private Gtk.Entry _txtAudioFile;
@@ -85,18 +85,18 @@ namespace subs2srs
         private Gtk.CheckButton _chkAudioPad;
         private Gtk.SpinButton _spinAudioPadStart;
         private Gtk.SpinButton _spinAudioPadEnd;
-        private Gtk.CheckButton _chkNormalize;
+        internal Gtk.CheckButton _chkNormalize;
         private Gtk.Button _btnAudioBrowse; // stored for sensitivity toggle
 
         // ── Snapshot tab fields ─────────────────────────────────────────────
-        private Gtk.CheckButton _chkGenerateSnapshots;
+        internal Gtk.CheckButton _chkGenerateSnapshots;
         private Gtk.SpinButton _spinSnapshotWidth;
         private Gtk.SpinButton _spinSnapshotHeight;
         private Gtk.SpinButton _spinSnapshotCropBottom;
         private Gtk.SpinButton _spinSnapshotQuality;
 
         // ── Video tab fields ────────────────────────────────────────────────
-        private Gtk.CheckButton _chkGenerateVideo;
+        internal Gtk.CheckButton _chkGenerateVideo;
         private Gtk.SpinButton _spinVideoWidth;
         private Gtk.SpinButton _spinVideoHeight;
         private Gtk.SpinButton _spinVideoCropBottom;
@@ -109,9 +109,9 @@ namespace subs2srs
         private Gtk.CheckButton _chkIPod;
 
         // ── Bottom bar ──────────────────────────────────────────────────────
-        private Gtk.Button _btnGo;
-        private Gtk.Button _btnCancel;
-        private Gtk.ProgressBar _progressBar;
+        internal Gtk.Button _btnGo;
+        internal Gtk.Button _btnCancel;
+        internal Gtk.ProgressBar _progressBar;
         private GtkProgressReporter? _reporter;
         private List<InfoStream> _audioStreams = new List<InfoStream>();
         private DialogPreview? _preview;
@@ -139,6 +139,24 @@ namespace subs2srs
 
             BuildUI();
             LoadSettings();
+            CheckExternalTools();
+        }
+
+        /// <summary>
+        /// Verify that ffmpeg can be found; without it nothing can be generated.
+        /// Shows one clear message with an install hint and disables Go.
+        /// mkvtoolnix and mp3gain are only checked when their feature is used.
+        /// </summary>
+        internal void CheckExternalTools()
+        {
+            bool ok = ConstantSettings.IsFFmpegAvailable;
+            _btnGo.SetSensitive(ok);
+            if (!ok)
+            {
+                _progressBar.SetText("ffmpeg not found");
+                Logger.Instance.error("ffmpeg not found (ToolsDir='" + ConstantSettings.ToolsDir + "')");
+                UtilsMsg.showErrMsg(ConstantSettings.FFmpegMissingMessage);
+            }
         }
 
         // ═══════════════════════════════════════════════════════════════════
@@ -966,7 +984,7 @@ namespace subs2srs
                 SetTitle("subs2srs");
         }
 
-        private void SaveSettings()
+        internal void SaveSettings()
         {
             try
             {
@@ -1148,7 +1166,13 @@ namespace subs2srs
             _comboAudioStream.SetSelected(0);
         }
 
-        private async void OnGoClicked(object? sender, EventArgs e)
+        private async void OnGoClicked(object? sender, EventArgs e) => await GoAsync();
+
+        /// <summary>
+        /// Validate the form, save settings and run the processor.
+        /// Awaitable so UI tests can drive it without clicking.
+        /// </summary>
+        internal async Task GoAsync()
         {
             if (!_btnGo.GetSensitive()) return;
 

@@ -1,5 +1,33 @@
 # Changelog
 
+## Unreleased
+
+**Windows support**:
+- subs2srs now runs on Windows 10/11. Releases attach a self-contained portable zip (`subs2srs-<ver>-win-x64.zip`) with .NET and the GTK 4 runtime bundled from MSYS2 UCRT64 (`dist/windows/bundle-gtk.ps1`, `.github/workflows/release.yml`). ffmpeg is not bundled.
+- New preference **Tools Directory** (Misc): a folder searched before `PATH` for ffmpeg, ffprobe, ffplay, mkvinfo, mkvextract and mp3gain. Tool lookup is `PATHEXT`-aware and no longer mutates the process `PATH`.
+- Startup check: if ffmpeg cannot be found, one clear message with install instructions is shown and Go is disabled.
+- All GTK P/Invokes in `GtkColumnViewHelper` replaced with managed gir.core calls (the `"gtk-4"` library name only resolved on Linux).
+- External tools are launched with UTF-8 output decoding, `-nostdin` for ffmpeg, and never through the shell, so non-ASCII paths work and no console windows flash.
+- GLib/GTK warnings are forwarded into the log file (the Windows build has no console).
+- Preferences and logs use `%APPDATA%\subs2srs` / `%LOCALAPPDATA%\subs2srs\Logs` on Windows.
+
+**Bug fixes**:
+- Choosing a legacy subtitle encoding (Shift-JIS, GBK, EUC-KR, Windows-125x, …) threw `ArgumentException`; the code-page encoding provider is now registered.
+- ffmpeg progress parsing used the current culture for decimals and failed on systems with a `,` decimal separator.
+- Temp file paths were built by string concatenation instead of `Path.Combine`.
+- Error messages for mp3gain/mkvextract failures said "ffmpeg".
+- `UtilsAudio.extractAudio` (non-progress path) passed the bitrate argument where the input file belonged.
+
+**Tests**:
+- New card-generation end-to-end tests in `subs2srs.Tests` (`SubsProcessorE2ETests`) that run the real pipeline against generated media; skipped when ffmpeg is absent.
+- New `subs2srs.UiTests` project: opens every window, drives the main window through a full deck generation and the Preferences dialog through OK/Cancel. Runs on Windows and under Xvfb on Linux in CI.
+
+**Build/CI**:
+- CI now runs on Linux (Xvfb) and Windows (MSYS2 GTK); NuGet lock files added.
+- `make test-ui`, `make publish-windows`; `depends` lists mp3gain/mkvtoolnix as optional.
+
+---
+
 ## 0.2.9
 
 **Bug fixes**:

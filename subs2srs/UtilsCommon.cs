@@ -50,6 +50,21 @@ namespace subs2srs
     }
 
 
+    private static bool _encodingsRegistered;
+
+    /// <summary>
+    /// Make legacy code pages (Shift-JIS, GBK, EUC-KR, Windows-125x …) available to
+    /// Encoding.GetEncoding. .NET Core only ships Unicode/ASCII/Latin-1 by default.
+    /// Idempotent; called from Program.Main and from the processing pipeline.
+    /// </summary>
+    public static void RegisterEncodings()
+    {
+      if (_encodingsRegistered) return;
+      Encoding.RegisterProvider(CodePagesEncodingProvider.Instance);
+      _encodingsRegistered = true;
+    }
+
+
     /// <summary>
     /// Get the directory that the executable resides in.
     /// </summary>
@@ -143,24 +158,40 @@ namespace subs2srs
     // ── Exe resolution ──────────────────────────────────────────────────
 
     /// <summary>
-    /// Get the list of exe paths to try, in order: relative, absolute, bare name (after PATH fix).
+    /// Get the distinct list of exe paths to try, in order: the resolved full
+    /// path (Tools Directory / PATH), the relative path, then the bare file name.
+    /// Never mutates the process PATH.
     /// </summary>
     private static IEnumerable<string> getExePaths(string relPath, string fullPath)
     {
-      yield return relPath;
-      yield return fullPath;
-
-      // Ensure directory of fullPath is in PATH, then try bare filename
-      string dir = Path.GetDirectoryName(fullPath);
-      if (!string.IsNullOrEmpty(dir))
+      var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+      foreach (var candidate in new[] { fullPath, relPath, Path.GetFileName(fullPath) })
       {
-        string oldPath = Environment.GetEnvironmentVariable("PATH") ?? "";
-        var pathDirs = new HashSet<string>(oldPath.Split(Path.PathSeparator));
-        if (!pathDirs.Contains(dir))
-          Environment.SetEnvironmentVariable("PATH", oldPath + Path.PathSeparator + dir);
+        if (!string.IsNullOrEmpty(candidate) && seen.Add(candidate))
+          yield return candidate;
       }
+    }
 
-      yield return Path.GetFileName(fullPath);
+    /// <summary>
+    /// Build a ProcessStartInfo for an external tool with UTF-8 output decoding
+    /// and no console window. ffmpeg's output is UTF-8 regardless of the
+    /// console code page, so the default OEM decoding mangles non-ASCII paths.
+    /// </summary>
+    internal static ProcessStartInfo makeToolStartInfo(string exe, string args,
+      bool redirectStdout, bool redirectStderr)
+    {
+      var psi = new ProcessStartInfo
+      {
+        FileName = exe,
+        Arguments = args,
+        UseShellExecute = false,
+        CreateNoWindow = true,
+        RedirectStandardOutput = redirectStdout,
+        RedirectStandardError = redirectStderr,
+      };
+      if (redirectStdout) psi.StandardOutputEncoding = new UTF8Encoding(false);
+      if (redirectStderr) psi.StandardErrorEncoding = new UTF8Encoding(false);
+      return psi;
     }
 
     private static IEnumerable<string> getFFmpegPaths()
@@ -179,15 +210,21 @@ namespace subs2srs
       try
       {
         using var process = new Process();
-        process.StartInfo.FileName = exe;
-        process.StartInfo.Arguments = args;
-        process.StartInfo.UseShellExecute = useShellExecute;
-        process.StartInfo.CreateNoWindow = createNoWindow;
+        if (useShellExecute)
+        {
+          process.StartInfo.FileName = exe;
+          process.StartInfo.Arguments = args;
+          process.StartInfo.UseShellExecute = true;
+          process.StartInfo.CreateNoWindow = createNoWindow;
+        }
+        else
+        {
+          process.StartInfo = makeToolStartInfo(exe, args, redirectStdout: true, redirectStderr: true);
+          process.StartInfo.CreateNoWindow = createNoWindow;
+        }
         var stderr = new StringBuilder();
         if (!useShellExecute)
         {
-          process.StartInfo.RedirectStandardError = true;
-          process.StartInfo.RedirectStandardOutput = true;
           process.ErrorDataReceived += (s, e) =>
           {
             if (e.Data != null) stderr.AppendLine(e.Data);
@@ -203,11 +240,12 @@ namespace subs2srs
         process.WaitForExit();
         if (!useShellExecute && process.ExitCode != 0)
         {
+          string toolName = Path.GetFileNameWithoutExtension(exe);
           string full = stderr.ToString();
           if (full.Length > 0)
-            Console.Error.WriteLine($"[ffmpeg stderr]\n{full}");
+            Console.Error.WriteLine($"[{toolName} stderr]\n{full}");
           string lastLine = GetLastNonEmptyLine(full);
-          return $"ffmpeg exited with code {process.ExitCode}: {lastLine}";
+          return $"{toolName} exited with code {process.ExitCode}: {lastLine}";
         }
         return null;
       }
@@ -240,13 +278,11 @@ namespace subs2srs
       try
       {
         using var process = new Process();
-        process.StartInfo.FileName = exe;
-        process.StartInfo.Arguments = args;
-        process.StartInfo.UseShellExecute = false;
-        process.StartInfo.CreateNoWindow = true;
-        process.StartInfo.RedirectStandardOutput = true;
+        process.StartInfo = makeToolStartInfo(exe, args, redirectStdout: true, redirectStderr: false);
         process.Start();
-        return process.StandardOutput.ReadToEnd();
+        string output = process.StandardOutput.ReadToEnd();
+        process.WaitForExit();
+        return output;
       }
       catch
       {
@@ -263,13 +299,11 @@ namespace subs2srs
       try
       {
         using var process = new Process();
-        process.StartInfo.FileName = exe;
-        process.StartInfo.Arguments = args;
-        process.StartInfo.UseShellExecute = false;
-        process.StartInfo.CreateNoWindow = true;
-        process.StartInfo.RedirectStandardError = true;
+        process.StartInfo = makeToolStartInfo(exe, args, redirectStdout: false, redirectStderr: true);
         process.Start();
-        return process.StandardError.ReadToEnd();
+        string output = process.StandardError.ReadToEnd();
+        process.WaitForExit();
+        return output;
       }
       catch
       {
@@ -288,11 +322,7 @@ namespace subs2srs
       try
       {
         using var process = new Process();
-        process.StartInfo.FileName = exe;
-        process.StartInfo.Arguments = args;
-        process.StartInfo.UseShellExecute = false;
-        process.StartInfo.CreateNoWindow = true;
-        process.StartInfo.RedirectStandardError = true;
+        process.StartInfo = makeToolStartInfo(exe, args, redirectStdout: false, redirectStderr: true);
         process.ErrorDataReceived += new DataReceivedEventHandler(dialogProgress.OnFFmpegOutput);
         process.Start();
         process.BeginErrorReadLine();
@@ -372,9 +402,19 @@ namespace subs2srs
     public static void startFFmpeg(string ffmpegArgs, bool useShellExecute, bool createNoWindow)
     {
       string? error = startProcess(ConstantSettings.PathFFmpegExe, ConstantSettings.PathFFmpegFullExe,
-        ffmpegArgs, useShellExecute, createNoWindow);
+        withNoStdin(ffmpegArgs), useShellExecute, createNoWindow);
       if (error != null)
         throw new Exception(error);
+    }
+
+    /// <summary>
+    /// ffmpeg reads stdin for interactive commands ("q" to quit, "?" for help).
+    /// With no console attached (WinExe / redirected streams) it can stall or
+    /// consume the parent's input, so always pass -nostdin.
+    /// </summary>
+    private static string withNoStdin(string ffmpegArgs)
+    {
+      return ffmpegArgs.Contains("-nostdin") ? ffmpegArgs : "-nostdin " + ffmpegArgs;
     }
 
 
@@ -385,7 +425,7 @@ namespace subs2srs
     {
       foreach (string exe in getFFmpegPaths())
       {
-        if (runProcessWithProgress(exe, ffmpegArgs, dialogProgress))
+        if (runProcessWithProgress(exe, withNoStdin(ffmpegArgs), dialogProgress))
           return;
       }
     }
@@ -398,12 +438,39 @@ namespace subs2srs
     {
       foreach (string exe in getFFmpegPaths())
       {
-        string result = callExeAndGetStderr(exe, ffmpegArgs);
+        string result = callExeAndGetStderr(exe, withNoStdin(ffmpegArgs));
         if (result != null)
           return result;
       }
 
       return "";
+    }
+
+    /// <summary>
+    /// Run ffprobe with the given arguments and return stdout ("" on failure).
+    /// </summary>
+    public static string getFFprobeStdout(string ffprobeArgs, int timeoutMs = 10000)
+    {
+      string exe = ConstantSettings.ResolveToolOrName("ffprobe");
+      try
+      {
+        using var proc = new Process();
+        proc.StartInfo = makeToolStartInfo(exe, ffprobeArgs, redirectStdout: true, redirectStderr: true);
+        proc.Start();
+        // Drain stderr asynchronously so a chatty ffprobe cannot block on a full pipe.
+        proc.ErrorDataReceived += (s, e) => { };
+        proc.BeginErrorReadLine();
+        string json = proc.StandardOutput.ReadToEnd();
+        if (!proc.WaitForExit(timeoutMs))
+        {
+          try { proc.Kill(entireProcessTree: true); } catch { }
+        }
+        return json;
+      }
+      catch
+      {
+        return "";
+      }
     }
   }
 }
