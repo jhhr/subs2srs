@@ -1,3 +1,4 @@
+//  Copyright (C) 2009-2016 Christopher Brochtrup
 //  Copyright (C) 2026 fkzys and contributors
 //
 //  This file is part of subs2srs.
@@ -16,7 +17,6 @@
 //  along with subs2srs.  If not, see <http://www.gnu.org/licenses/>.
 //
 //////////////////////////////////////////////////////////////////////////////
-
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
@@ -41,12 +41,21 @@ namespace subs2srs
     /// are resizable; the last column uses expand to fill remaining space.
     ///
     /// Snapshot preview uses Gtk.Picture (replaces Gtk.Image with Pixbuf).
+    ///
+    /// Snippet grouping: the list stays one row per subtitle line; the
+    /// grouping is drawn on top (a coloured band and bracket in the leading
+    /// "Group" column plus the trimmed duration of the snippet). Editing is
+    /// three per-line actions (attach above, attach below, detach) reachable
+    /// by buttons, configurable keys and drag-and-drop onto a neighbour, all
+    /// routed through <see cref="GroupingEditor"/>. Go reuses the edited lines.
     /// </summary>
     public class DialogPreview : Gtk.Window
     {
         // CSS class names for row background styling
         private const string RowActiveCss = "preview-row-active";
         private const string RowInactiveCss = "preview-row-inactive";
+        private const string BandACss = "preview-band-a";
+        private const string BandBCss = "preview-band-b";
         private const string WarnCss = "color: #FF0000;";
 
         // Widgets
@@ -60,8 +69,10 @@ namespace subs2srs
         private Gtk.Label _lblTime;
         private Gtk.Picture _imgSnap;
         private Gtk.CheckButton _chkSnap;
-        private Gtk.Button _btnAudio, _btnGo;
-        private Gtk.Label _lblEpL, _lblEpA, _lblEpI, _lblTL, _lblTA, _lblTI;
+        private Gtk.Button _btnAudio, _btnGo, _btnSaveValidation;
+        private Gtk.Button _btnUndo, _btnRedo, _btnNextDiff;
+        private Gtk.Label _lblGroupStatus;
+        private Gtk.Label _lblEpL, _lblEpA, _lblEpI, _lblEpC, _lblTL, _lblTA, _lblTI;
         private Gtk.ProgressBar _progress;
 
         // State
@@ -73,8 +84,26 @@ namespace subs2srs
         private string _currentSnapshotPath;
         private bool _destroyed;
 
+        // Grouping editor for the episode currently shown
+        private GroupingEditor _editor;
+        private int _editorEp = -1;
+        private List<KeyBinding> _keysAbove = new(), _keysBelow = new(), _keysDetach = new();
+        private readonly Dictionary<string, uint> _keyvalCache = new();
+
         /// <summary>Whether this window has been destroyed or hidden permanently.</summary>
         public bool IsDestroyed => _destroyed;
+
+        /// <summary>True while the preview is being generated.</summary>
+        internal bool IsRunning => _running;
+
+        /// <summary>Text of the preview's progress bar ("Preview ready" once loaded); for tests.</summary>
+        internal string ProgressText => _progress?.GetText() ?? "";
+
+        /// <summary>The parsed, filtered and edited lines plus join vectors; what Go should generate.</summary>
+        public WorkerVars PreviewVars => _wv;
+
+        /// <summary>The grouping editor of the episode currently shown (for tests).</summary>
+        internal GroupingEditor CurrentEditor => _editor;
 
         public event EventHandler RefreshSettings;
 
@@ -87,7 +116,7 @@ namespace subs2srs
         public DialogPreview() : base()
         {
             SetTitle("Preview");
-            SetDefaultSize(1000, 750);
+            SetDefaultSize(1100, 780);
 
             // Hide instead of destroying on close, except when CleanupAndDestroy
             // asked for a real destroy (app exit / owner disposing the preview).
@@ -107,6 +136,7 @@ namespace subs2srs
             _destroyed = false;
             // Reset running flag in case previous run was interrupted by hide
             _running = false;
+            LoadKeyBindings();
             Show();
             PopulateEpCombo();
             RunPreviewAsync();
@@ -165,7 +195,7 @@ namespace subs2srs
             // Each column gets its own SignalListItemFactory via CreateColumn().
             //
             // Layout strategy to avoid broken drag-resize:
-            //   - Subs1, Subs2, Start, End: fixed_width + resizable, NO expand
+            //   - Group, Gap, Subs1, Subs2, Start, End: fixed_width + resizable, NO expand
             //   - Duration (last column): expand=true, NO fixed_width
             // This ensures the layout engine does not fight user drag.
             _store = Gio.ListStore.New(Gtk.StringObject.GetGType());
@@ -184,24 +214,36 @@ namespace subs2srs
             _columnView.SetShowRowSeparators(false);
 
             // Fixed-width resizable columns (no expand)
+            var colGroup = CreateColumn("Group", 70,
+                (item) => item.GroupText, ellipsize: false, groupColumn: true);
+            var colGap = CreateColumn("Gap", 55,
+                (item) => item.GapText, ellipsize: false);
             var colS1 = CreateColumn("Subs1", 280,
                 (item) => item.Subs1Text, ellipsize: true);
             var colS2 = CreateColumn("Subs2", 200,
                 (item) => item.Subs2Text, ellipsize: true);
-            var colStart = CreateColumn("Start", 120,
+            var colStart = CreateColumn("Start", 110,
                 (item) => item.StartText, ellipsize: false);
-            var colEnd = CreateColumn("End", 120,
+            var colEnd = CreateColumn("End", 110,
                 (item) => item.EndText, ellipsize: false);
 
             // Last column: expand to fill remaining space, no fixed_width
             var colDur = CreateExpandColumn("Duration",
                 (item) => item.DurText);
 
+            _columnView.AppendColumn(colGroup);
+            _columnView.AppendColumn(colGap);
             _columnView.AppendColumn(colS1);
             _columnView.AppendColumn(colS2);
             _columnView.AppendColumn(colStart);
             _columnView.AppendColumn(colEnd);
             _columnView.AppendColumn(colDur);
+
+            // Keyboard shortcuts for the grouping actions (only while the list has focus,
+            // so single-letter bindings never fire inside the text entries).
+            var keys = Gtk.EventControllerKey.New();
+            keys.OnKeyPressed += (c, a) => OnListKeyPressed(a.Keyval, a.State);
+            _columnView.AddController(keys);
 
             // Wrap ColumnView in ScrolledWindow
             var sw = Gtk.ScrolledWindow.New();
@@ -284,6 +326,42 @@ namespace subs2srs
             AppendBtn(ab1, "Deactivate", OnDeactivate);
             detailBox.Append(ab1);
 
+            // Action buttons row 2: snippet grouping
+            var ab3 = Gtk.Box.New(Gtk.Orientation.Horizontal, 4);
+            ab3.Append(Gtk.Label.New("Snippet:"));
+            var bAbove = Gtk.Button.NewWithLabel("Attach ↑");
+            bAbove.SetTooltipText("Attach the selected line to the line above (drag it up, or use the key from Preferences)");
+            bAbove.OnClicked += (s, e) => ApplyToSelected(JoinAction.AttachAbove);
+            ab3.Append(bAbove);
+            var bBelow = Gtk.Button.NewWithLabel("Attach ↓");
+            bBelow.SetTooltipText("Attach the selected line to the line below (drag it down, or use the key from Preferences)");
+            bBelow.OnClicked += (s, e) => ApplyToSelected(JoinAction.AttachBelow);
+            ab3.Append(bBelow);
+            var bDetach = Gtk.Button.NewWithLabel("Detach");
+            bDetach.SetTooltipText("Make the selected line a card of its own (drop it onto itself, or use the key from Preferences)");
+            bDetach.OnClicked += (s, e) => ApplyToSelected(JoinAction.Detach);
+            ab3.Append(bDetach);
+            ab3.Append(Gtk.Separator.New(Gtk.Orientation.Vertical));
+            AppendBtn(ab3, "Regroup (rules)", OnRegroupRules);
+            AppendBtn(ab3, "Ungroup all", OnUngroupAll);
+            ab3.Append(Gtk.Separator.New(Gtk.Orientation.Vertical));
+            _btnUndo = Gtk.Button.NewWithLabel("Undo");
+            _btnUndo.OnClicked += (s, e) => { if (_editor != null && _editor.Undo()) AfterGroupingChange(); };
+            ab3.Append(_btnUndo);
+            _btnRedo = Gtk.Button.NewWithLabel("Redo");
+            _btnRedo.OnClicked += (s, e) => { if (_editor != null && _editor.Redo()) AfterGroupingChange(); };
+            ab3.Append(_btnRedo);
+            _btnNextDiff = Gtk.Button.NewWithLabel("Next diff");
+            _btnNextDiff.SetTooltipText("Jump to the next line where your grouping differs from the proposal");
+            _btnNextDiff.OnClicked += OnNextDisagreement;
+            ab3.Append(_btnNextDiff);
+            _lblGroupStatus = Gtk.Label.New("");
+            _lblGroupStatus.SetHalign(Gtk.Align.Start);
+            _lblGroupStatus.SetEllipsize(Pango.EllipsizeMode.End);
+            _lblGroupStatus.SetHexpand(true);
+            ab3.Append(_lblGroupStatus);
+            detailBox.Append(ab3);
+
             // Find + audio
             var ab2 = Gtk.Box.New(Gtk.Orientation.Horizontal, 4);
             ab2.Append(Gtk.Label.New("Find:"));
@@ -294,6 +372,7 @@ namespace subs2srs
             AppendBtn(ab2, "Find Next", (s, e) => FindNext());
             ab2.Append(Gtk.Separator.New(Gtk.Orientation.Vertical));
             _btnAudio = Gtk.Button.NewWithLabel("Preview Audio");
+            _btnAudio.SetTooltipText("Play the selected line, or its whole snippet with dead space removed");
             _btnAudio.OnClicked += OnPreviewAudio;
             ab2.Append(_btnAudio);
             detailBox.Append(ab2);
@@ -314,6 +393,8 @@ namespace subs2srs
             _lblEpA = Gtk.Label.New("0"); sg.Attach(_lblEpA, 4, 0, 1, 1);
             sg.Attach(Gtk.Label.New("Inactive:"), 5, 0, 1, 1);
             _lblEpI = Gtk.Label.New("0"); sg.Attach(_lblEpI, 6, 0, 1, 1);
+            sg.Attach(Gtk.Label.New("Cards:"), 7, 0, 1, 1);
+            _lblEpC = Gtk.Label.New("0"); sg.Attach(_lblEpC, 8, 0, 1, 1);
             sg.Attach(Gtk.Label.New("Total —"), 0, 1, 1, 1);
             sg.Attach(Gtk.Label.New("Lines:"), 1, 1, 1, 1);
             _lblTL = Gtk.Label.New("0"); sg.Attach(_lblTL, 2, 1, 1, 1);
@@ -332,6 +413,10 @@ namespace subs2srs
             // Bottom buttons
             var bot = Gtk.Box.New(Gtk.Orientation.Horizontal, 6);
             bot.SetHalign(Gtk.Align.End);
+            _btnSaveValidation = Gtk.Button.NewWithLabel("Save as validation");
+            _btnSaveValidation.SetTooltipText("Write one JSON file per episode with the kept lines and the current grouping (for evaluating groupers)");
+            _btnSaveValidation.OnClicked += OnSaveValidation;
+            bot.Append(_btnSaveValidation);
             var btnClose = Gtk.Button.NewWithLabel("Close");
             btnClose.SetSizeRequest(100, -1);
             btnClose.OnClicked += (s, e) => SetVisible(false);
@@ -350,13 +435,6 @@ namespace subs2srs
             mainPane.SetShrinkStartChild(true);
             mainPane.SetShrinkEndChild(true);
 
-            // Wait for actual layout before setting divider position
-            mainPane.OnNotify += (s, e) =>
-            {
-                if (e.Pspec.GetName() != "position") return;
-                // Unsubscribe pattern: use a flag to run only once
-            };
-
             bool panedInitialized = false;
             mainPane.OnMap += (s, e) =>
             {
@@ -367,8 +445,8 @@ namespace subs2srs
                 {
                     int total = mainPane.GetAllocatedHeight();
                     if (total <= 0) return true; // keep waiting
-                    // Bottom panel gets ~479px
-                    int pos = total - 479;
+                    // Bottom panel gets ~510px
+                    int pos = total - 510;
                     if (pos < 150) pos = 150;
                     mainPane.SetPosition(pos);
                     return false; // stop timer
@@ -384,11 +462,16 @@ namespace subs2srs
                 ".preview-row-inactive { background-color: #FFB6C1; color: #1A1A1A; }" +
                 ".preview-row-active  label { color: inherit; }" +
                 ".preview-row-inactive label { color: inherit; }" +
+                // Snippet bands (leading column): alternate per snippet
+                ".preview-band-a { background-color: #C9E2FF; color: #1A1A1A; font-weight: 700; }" +
+                ".preview-band-b { background-color: #FFE0B8; color: #1A1A1A; font-weight: 700; }" +
                 // Selected state — darker shade + visible outline
                 "columnview listview > row:selected .preview-row-active  " +
                     "{ background-color: #F0F0E5; outline: 2px solid #3584E4; outline-offset: -2px; }" +
                 "columnview listview > row:selected .preview-row-inactive " +
                     "{ background-color: #E8849A; outline: 2px solid #3584E4; outline-offset: -2px; }" +
+                "columnview listview > row:selected .preview-band-a { background-color: #A9CCF5; }" +
+                "columnview listview > row:selected .preview-band-b { background-color: #F5CB9A; }" +
                 "columnview listview > row:selected .preview-row-active  label { color: inherit; }" +
                 "columnview listview > row:selected .preview-row-inactive label { color: inherit; }" +
                 // Zero-gap: remove padding/margin on ColumnView cells
@@ -412,6 +495,7 @@ namespace subs2srs
             });
 
             SetChild(vbox);
+            UpdateGroupingButtons();
         }
 
         /// <summary>
@@ -419,13 +503,15 @@ namespace subs2srs
         /// Each cell renders a Label whose text comes from textSelector.
         /// The row-level CSS class (active/inactive) is applied to a
         /// wrapper Box so the background fills the entire cell area.
+        /// Every cell is also a drag source and a drop target for the
+        /// grouping gestures (drag a row onto its neighbour).
         ///
         /// Important: this column does NOT use expand, only fixed_width.
         /// Mixing expand + fixed_width causes broken drag-resize behavior.
         /// </summary>
         private Gtk.ColumnViewColumn CreateColumn(
             string title, int fixedWidth,
-            Func<PreviewItem, string> textSelector, bool ellipsize)
+            Func<PreviewItem, string> textSelector, bool ellipsize, bool groupColumn = false)
         {
             var factory = Gtk.SignalListItemFactory.New();
 
@@ -446,6 +532,7 @@ namespace subs2srs
 
                 box.Append(lbl);
                 listItem.SetChild(box);
+                AttachRowDragAndDrop(box, listItem);
             };
 
             factory.OnBind += (f, args) =>
@@ -458,10 +545,14 @@ namespace subs2srs
                 var box = (Gtk.Box)listItem.GetChild();
                 if (box == null) return;
 
-                // Apply background color based on active/inactive state
+                // Apply background color based on active/inactive state (or the snippet band)
                 box.RemoveCssClass(RowActiveCss);
                 box.RemoveCssClass(RowInactiveCss);
-                box.AddCssClass(item.IsActive ? RowActiveCss : RowInactiveCss);
+                box.RemoveCssClass(BandACss);
+                box.RemoveCssClass(BandBCss);
+                if (groupColumn && item.Band == 1) box.AddCssClass(BandACss);
+                else if (groupColumn && item.Band == 2) box.AddCssClass(BandBCss);
+                else box.AddCssClass(item.IsActive ? RowActiveCss : RowInactiveCss);
 
                 var lbl = (Gtk.Label)box.GetFirstChild();
                 lbl.SetText(textSelector(item));
@@ -501,6 +592,7 @@ namespace subs2srs
 
                 box.Append(lbl);
                 listItem.SetChild(box);
+                AttachRowDragAndDrop(box, listItem);
             };
 
             factory.OnBind += (f, args) =>
@@ -528,6 +620,42 @@ namespace subs2srs
             GtkColumnViewHelper.SetResizable(col, true);
 
             return col;
+        }
+
+        /// <summary>
+        /// Drag a row onto the row above it = attach above, onto the row below =
+        /// attach below, onto itself = detach. The payload is the source row
+        /// position; the target is the position the cell is bound to at drop time.
+        /// </summary>
+        private void AttachRowDragAndDrop(Gtk.Box box, Gtk.ListItem listItem)
+        {
+            try
+            {
+                var drag = Gtk.DragSource.New();
+                drag.SetActions(Gdk.DragAction.Move);
+                drag.OnPrepare += (src, a) =>
+                {
+                    uint pos = listItem.GetPosition();
+                    if (pos >= _items.Count || !_items[(int)pos].IsActive) return null;
+                    return Gdk.ContentProvider.NewForValue(new GObject.Value(pos.ToString()));
+                };
+                box.AddController(drag);
+
+                var drop = Gtk.DropTarget.New(GObject.Type.String, Gdk.DragAction.Move);
+                drop.OnDrop += (tgt, a) =>
+                {
+                    string payload = null;
+                    try { payload = a.Value?.GetString(); } catch { }
+                    if (!int.TryParse(payload, out int srcPos)) return false;
+                    return HandleRowDrop(srcPos, (int)listItem.GetPosition());
+                };
+                box.AddController(drop);
+            }
+            catch (Exception ex)
+            {
+                // Drag-and-drop is a convenience; the buttons and keys still work.
+                Logger.Instance.info("Preview: drag-and-drop unavailable: " + ex.Message);
+            }
         }
 
         /// <summary>
@@ -596,6 +724,8 @@ namespace subs2srs
             }
 
             _wv = result;
+            _editor = null;
+            _editorEp = -1;
             int ep = (int)_comboEp.GetSelected();
             if (ep < 0) ep = 0;
             _guard = true;
@@ -640,7 +770,37 @@ namespace subs2srs
             if (c == null) throw new OperationCanceledException();
             wv.CombinedAll = c;
 
+            // Propose a grouping (rules, or nothing); Go reuses these vectors,
+            // so whatever the user edits here is what gets generated.
+            rpt.UpdateProgress(0, "Grouping lines into snippets");
+            SnippetMode mode = Settings.Instance.Snippets.Mode;
+            var limits = SnippetLimits.FromSettings();
+            var options = RuleGrouperOptions.FromSettings();
+            wv.Joins = new List<bool[]>();
+            wv.ProposedJoins = mode == SnippetMode.Off ? null : new List<bool[]>();
+            wv.ProposalProducer = mode == SnippetMode.Off ? null : "rules";
+
+            foreach (var lines in wv.CombinedAll)
+            {
+                bool[] joins = ProposeJoins(lines, mode, limits, options);
+                wv.Joins.Add(joins);
+                wv.ProposedJoins?.Add((bool[])joins.Clone());
+                if (rpt.Cancel) throw new OperationCanceledException();
+            }
+            rpt.UpdateProgress(100, "Grouping lines into snippets");
+
             return wv;
+        }
+
+        /// <summary>Rules (or nothing) followed by the limit check, as a full-index join vector.</summary>
+        private static bool[] ProposeJoins(List<InfoCombined> lines, SnippetMode mode,
+            SnippetLimits limits, RuleGrouperOptions options)
+        {
+            bool[] joins = WorkerSubs.computeJoins(lines, mode, limits, options);
+            int[] kept = SnippetGrouping.KeptIndices(lines);
+            bool[] repaired = SnippetGrouping.Repair(lines, kept, SnippetGrouping.ProjectToKept(joins, kept), limits);
+            SnippetGrouping.ApplyKeptJoins(joins, kept, repaired);
+            return joins;
         }
 
         // ── LIST VIEW ───────────────────────────────────────────────────────
@@ -651,6 +811,8 @@ namespace subs2srs
             _items.Clear();
             if (_wv?.CombinedAll == null || epIdx < 0
                 || epIdx >= _wv.CombinedAll.Count) return;
+
+            EnsureEditor(epIdx);
 
             var arr = _wv.CombinedAll[epIdx];
             for (int i = 0; i < arr.Count; i++)
@@ -664,7 +826,81 @@ namespace subs2srs
                     cb.Subs1.Text, cb.Subs2.Text,
                     FmtTime(cb.Subs1.StartTime), FmtTime(cb.Subs1.EndTime),
                     dur, cb.Active, i));
+            }
+
+            ComputeGroupTexts();
+
+            for (int i = 0; i < arr.Count; i++)
                 _store.Append(Gtk.StringObject.New(""));
+
+            UpdateGroupingButtons();
+        }
+
+        /// <summary>Create the grouping editor for an episode (once per episode per preview run).</summary>
+        private void EnsureEditor(int epIdx)
+        {
+            if (_editor != null && _editorEp == epIdx) return;
+            if (_wv?.Joins == null || epIdx >= _wv.Joins.Count) return;
+
+            var lines = _wv.CombinedAll[epIdx];
+            var editor = new GroupingEditor(lines, _wv.Joins[epIdx], SnippetLimits.FromSettings());
+            int ep = epIdx;
+            editor.Changed += () =>
+            {
+                if (_wv?.Joins != null && ep < _wv.Joins.Count)
+                    _wv.Joins[ep] = editor.Joins;
+            };
+            _editor = editor;
+            _editorEp = epIdx;
+        }
+
+        /// <summary>
+        /// Fill the Group/Gap texts and the colour band of every row from the editor:
+        /// a bracket (┌ │ └) with the snippet's trimmed duration on its first line,
+        /// and the gap to the previous kept line.
+        /// </summary>
+        private void ComputeGroupTexts()
+        {
+            if (_editor == null)
+            {
+                foreach (var it in _items) { it.GroupText = ""; it.GapText = ""; it.Band = 0; }
+                return;
+            }
+
+            var lines = _editor.Lines;
+            int[] kept = _editor.Kept;
+            bool[] joins = _editor.Joins;
+            bool[] keptJoins = SnippetGrouping.ProjectToKept(joins, kept);
+            var ranges = SnippetGrouping.JoinsToRanges(keptJoins, kept.Length);
+
+            // line index -> (ordinal, first, last, durationMs)
+            var info = new Dictionary<int, (int ordinal, int first, int last, int dur)>();
+            for (int o = 0; o < ranges.Count; o++)
+            {
+                int first = kept[ranges[o].first];
+                int last = kept[ranges[o].last];
+                int dur = SnippetGrouping.TrimmedDurationMs(lines, first, last, _editor.Limits);
+                for (int i = first; i <= last; i++)
+                    if (lines[i].Active) info[i] = (o, first, last, dur);
+            }
+
+            foreach (var it in _items)
+            {
+                int idx = it.Index;
+                it.GroupText = "";
+                it.GapText = "";
+                it.Band = 0;
+                if (idx < 0 || idx >= lines.Count || !lines[idx].Active) continue;
+
+                int gap = _editor.GapToPreviousKeptMs(idx);
+                it.GapText = gap >= 0 ? $"{gap / 1000.0:0.00}" : "";
+
+                if (!info.TryGetValue(idx, out var g) || g.first == g.last) continue;
+
+                it.Band = (g.ordinal % 2 == 0) ? 1 : 2;
+                if (idx == g.first) it.GroupText = $"┌ {g.dur / 1000.0:0.0}s";
+                else if (idx == g.last) it.GroupText = "└";
+                else it.GroupText = "│";
             }
         }
 
@@ -680,23 +916,28 @@ namespace subs2srs
 
         // ── SELECTION ───────────────────────────────────────────────────────
 
+        /// <summary>Row position of the last-clicked selected row, or -1.</summary>
+        private int SelectedPosition()
+        {
+            var bitset = _selection.GetSelection();
+            if (bitset == null || bitset.GetSize() == 0) return -1;
+            uint pos = bitset.GetMaximum();
+            return pos < _items.Count ? (int)pos : -1;
+        }
+
         private void OnSelChanged()
         {
             if (_guard) return;
 
             // Show detail for the last item in the selection bitset
-            var bitset = _selection.GetSelection();
-            if (bitset == null || bitset.GetSize() == 0) return;
-
-            // Use the maximum (last-clicked) position for detail panel
-            uint pos = bitset.GetMaximum();
-            if (pos >= _items.Count) return;
+            int pos = SelectedPosition();
+            if (pos < 0) return;
 
             int ep = (int)_comboEp.GetSelected();
             if (_wv?.CombinedAll == null || ep < 0
                 || ep >= _wv.CombinedAll.Count) return;
             var arr = _wv.CombinedAll[ep];
-            int idx = _items[(int)pos].Index;
+            int idx = _items[pos].Index;
             if (idx < 0 || idx >= arr.Count) return;
 
             var comb = arr[idx];
@@ -705,28 +946,222 @@ namespace subs2srs
             _txtS1.SetText(comb.Subs1.Text);
             _txtS2.SetText(comb.Subs2.Text);
             _txtS2.SetSensitive(Settings.Instance.Subs[1].Files.Length > 0);
-            _lblTime.SetText(FmtTime(comb.Subs1.StartTime)
-                + "  —  " + FmtTime(comb.Subs1.EndTime));
+            _lblTime.SetText(DescribeLine(idx, comb));
             _guard = false;
 
             UpdateSnapshot(comb);
         }
 
+        private string DescribeLine(int idx, InfoCombined comb)
+        {
+            string text = FmtTime(comb.Subs1.StartTime) + "  —  " + FmtTime(comb.Subs1.EndTime);
+            var range = _editor?.SnippetRangeOf(idx);
+            if (range != null && range.Value.first != range.Value.last)
+            {
+                int n = range.Value.last - range.Value.first + 1;
+                int dur = _editor.TrimmedDurationMsOf(idx);
+                text += $"   ·   snippet of {n} lines, {dur / 1000.0:0.0} s after gap removal";
+            }
+            return text;
+        }
+
         private InfoCombined GetSelectedCombined()
         {
-            var bitset = _selection.GetSelection();
-            if (bitset == null || bitset.GetSize() == 0) return null;
+            int pos = SelectedPosition();
+            if (pos < 0) return null;
 
-            uint pos = bitset.GetMaximum();
-            if (pos >= _items.Count) return null;
-
-            var item = _items[(int)pos];
+            var item = _items[pos];
             int ep = (int)_comboEp.GetSelected();
             if (_wv?.CombinedAll == null || ep < 0
                 || ep >= _wv.CombinedAll.Count) return null;
             var arr = _wv.CombinedAll[ep];
             int idx = item.Index;
             return idx >= 0 && idx < arr.Count ? arr[idx] : null;
+        }
+
+        // ── GROUPING EDITOR ─────────────────────────────────────────────────
+
+        private void LoadKeyBindings()
+        {
+            _keysAbove = KeyBinding.ParseList(ConstantSettings.GroupingKeyAttachAbove);
+            _keysBelow = KeyBinding.ParseList(ConstantSettings.GroupingKeyAttachBelow);
+            _keysDetach = KeyBinding.ParseList(ConstantSettings.GroupingKeyDetach);
+            _keyvalCache.Clear();
+        }
+
+        private uint ResolveKeyval(string name)
+        {
+            if (_keyvalCache.TryGetValue(name, out uint v)) return v;
+            uint keyval = 0;
+            try { keyval = Gdk.Functions.KeyvalToLower(Gdk.Functions.KeyvalFromName(name)); } catch { }
+            _keyvalCache[name] = keyval;
+            return keyval;
+        }
+
+        private static KeyBinding.Mods ToMods(Gdk.ModifierType state)
+        {
+            var m = KeyBinding.Mods.None;
+            if ((state & Gdk.ModifierType.ShiftMask) != 0) m |= KeyBinding.Mods.Shift;
+            if ((state & Gdk.ModifierType.ControlMask) != 0) m |= KeyBinding.Mods.Control;
+            if ((state & Gdk.ModifierType.AltMask) != 0) m |= KeyBinding.Mods.Alt;
+            if ((state & Gdk.ModifierType.SuperMask) != 0) m |= KeyBinding.Mods.Super;
+            return m;
+        }
+
+        private bool MatchesAny(List<KeyBinding> bindings, uint keyval, KeyBinding.Mods mods)
+        {
+            foreach (var b in bindings)
+                if (b.Matches(keyval, ResolveKeyval(b.KeyName), mods)) return true;
+            return false;
+        }
+
+        /// <summary>Key press inside the list: run a grouping action if a binding matches.</summary>
+        internal bool OnListKeyPressed(uint keyval, Gdk.ModifierType state)
+        {
+            uint lower;
+            try { lower = Gdk.Functions.KeyvalToLower(keyval); } catch { lower = keyval; }
+            var mods = ToMods(state);
+
+            JoinAction? action = null;
+            if (MatchesAny(_keysAbove, lower, mods)) action = JoinAction.AttachAbove;
+            else if (MatchesAny(_keysBelow, lower, mods)) action = JoinAction.AttachBelow;
+            else if (MatchesAny(_keysDetach, lower, mods)) action = JoinAction.Detach;
+            if (action == null) return false;
+
+            ApplyToSelected(action.Value);
+            return true;
+        }
+
+        /// <summary>Drop of row <paramref name="srcPos"/> onto row <paramref name="dstPos"/>.</summary>
+        internal bool HandleRowDrop(int srcPos, int dstPos)
+        {
+            if (srcPos < 0 || srcPos >= _items.Count || dstPos < 0 || dstPos >= _items.Count) return false;
+
+            JoinAction action;
+            if (dstPos == srcPos - 1) action = JoinAction.AttachAbove;
+            else if (dstPos == srcPos + 1) action = JoinAction.AttachBelow;
+            else if (dstPos == srcPos) action = JoinAction.Detach;
+            else
+            {
+                ShowGroupStatus("Drop a line onto the line directly above or below it to attach, or onto itself to detach.", false);
+                return false;
+            }
+
+            SelectRow(srcPos);
+            var result = ApplyToRow(srcPos, action);
+            return result.Ok;
+        }
+
+        /// <summary>Apply a grouping action to the selected row; returns the editor's verdict.</summary>
+        internal JoinResult ApplyToSelected(JoinAction action)
+        {
+            int pos = SelectedPosition();
+            if (pos < 0)
+            {
+                var r = JoinResult.Rejected("Select a line first.");
+                ShowGroupStatus(r.Message, false);
+                return r;
+            }
+            return ApplyToRow(pos, action);
+        }
+
+        private JoinResult ApplyToRow(int pos, JoinAction action)
+        {
+            if (_editor == null) return JoinResult.Rejected("No preview loaded.");
+            int idx = _items[pos].Index;
+            JoinResult result = _editor.Apply(idx, action);
+            ShowGroupStatus(result.Message, result.Ok);
+            if (result.Changed) AfterGroupingChange();
+            return result;
+        }
+
+        /// <summary>Redraw the grouping after the editor changed (action, undo, redo, regroup).</summary>
+        private void AfterGroupingChange()
+        {
+            ComputeGroupTexts();
+            RefreshAllRows();
+            UpdateGroupingButtons();
+            UpdateStats();
+            _changed = true;
+
+            // Keep the detail line in sync with the new snippet
+            int pos = SelectedPosition();
+            if (pos >= 0 && _cur != null)
+                _lblTime.SetText(DescribeLine(_items[pos].Index, _cur));
+        }
+
+        private void ShowGroupStatus(string message, bool ok)
+        {
+            _lblGroupStatus.SetText(message ?? "");
+            if (ok) _lblGroupStatus.RemoveCssClass("error");
+            else _lblGroupStatus.AddCssClass("error");
+        }
+
+        private void UpdateGroupingButtons()
+        {
+            _btnUndo?.SetSensitive(_editor != null && _editor.CanUndo);
+            _btnRedo?.SetSensitive(_editor != null && _editor.CanRedo);
+            int ep = _comboEp != null ? (int)_comboEp.GetSelected() : -1;
+            _btnNextDiff?.SetSensitive(_editor != null && _wv?.ProposedJoins != null
+                && ep >= 0 && ep < _wv.ProposedJoins.Count);
+        }
+
+        internal void SelectRow(int pos)
+        {
+            if (pos < 0 || pos >= _store.GetNItems()) return;
+            var all = Gtk.Bitset.NewRange(0, _store.GetNItems());
+            var one = Gtk.Bitset.NewEmpty();
+            one.Add((uint)pos);
+            _selection.SetSelection(one, all);
+            try { _columnView.ScrollTo((uint)pos, null, Gtk.ListScrollFlags.Focus, null); } catch { }
+        }
+
+        private void OnRegroupRules(Gtk.Button s, EventArgs e)
+        {
+            if (_editor == null || _wv == null) return;
+            int ep = (int)_comboEp.GetSelected();
+            if (ep < 0 || ep >= _wv.CombinedAll.Count) return;
+
+            var limits = SnippetLimits.FromSettings();
+            var options = RuleGrouperOptions.FromSettings();
+            _editor.Limits = limits;
+            bool[] joins = ProposeJoins(_wv.CombinedAll[ep], SnippetMode.Rules, limits, options);
+            _editor.SetJoins(joins);
+
+            _wv.ProposedJoins ??= new List<bool[]>();
+            while (_wv.ProposedJoins.Count < _wv.CombinedAll.Count) _wv.ProposedJoins.Add(null);
+            _wv.ProposedJoins[ep] = (bool[])joins.Clone();
+            _wv.ProposalProducer = "rules";
+
+            ShowGroupStatus("Regrouped with the rules.", true);
+            AfterGroupingChange();
+        }
+
+        private void OnUngroupAll(Gtk.Button s, EventArgs e)
+        {
+            if (_editor == null) return;
+            _editor.UngroupAll();
+            ShowGroupStatus("All lines are single cards again.", true);
+            AfterGroupingChange();
+        }
+
+        private void OnNextDisagreement(Gtk.Button s, EventArgs e)
+        {
+            if (_editor == null || _wv?.ProposedJoins == null) return;
+            int ep = (int)_comboEp.GetSelected();
+            if (ep < 0 || ep >= _wv.ProposedJoins.Count || _wv.ProposedJoins[ep] == null) return;
+
+            int pos = SelectedPosition();
+            int from = pos >= 0 ? _items[pos].Index : -1;
+            int next = _editor.NextDisagreement(_wv.ProposedJoins[ep], from);
+            if (next < 0)
+            {
+                ShowGroupStatus("No more differences from the proposal.", true);
+                return;
+            }
+            for (int i = 0; i < _items.Count; i++)
+                if (_items[i].Index == next) { SelectRow(i); break; }
+            ShowGroupStatus($"Line {next + 1}: your grouping differs from the proposal here.", true);
         }
 
         // ── SNAPSHOT PREVIEW ────────────────────────────────────────────────
@@ -743,8 +1178,7 @@ namespace subs2srs
             if (ep < 0 || ep >= Settings.Instance.VideoClips.Files.Length) return;
 
             string video = Settings.Instance.VideoClips.Files[ep];
-            TimeSpan mid = UtilsSubs.getMidpointTime(
-                comb.Subs1.StartTime, comb.Subs1.EndTime);
+            TimeSpan mid = UtilsSubs.getSnapshotTime(comb);
             string outFile = SysPath.Combine(_wv.MediaDir,
                 ConstantSettings.TempImageFilename);
 
@@ -869,6 +1303,10 @@ namespace subs2srs
                 }
             }
 
+            // The kept set changed, so neighbours and bands change too
+            _editor?.RefreshKept();
+            ComputeGroupTexts();
+
             // Refresh rows to update CSS classes, preserve selection
             _guard = true;
             var savedBitset = Gtk.Bitset.NewEmpty();
@@ -911,6 +1349,8 @@ namespace subs2srs
                 }
             }
 
+            _editor?.RefreshKept();
+            ComputeGroupTexts();
             RefreshAllRows();
             UpdateStats();
             _changed = true;
@@ -933,6 +1373,8 @@ namespace subs2srs
                 }
             }
 
+            _editor?.RefreshKept();
+            ComputeGroupTexts();
             RefreshAllRows();
             UpdateStats();
             _changed = true;
@@ -1012,6 +1454,33 @@ namespace subs2srs
 
         // ── AUDIO PREVIEW ───────────────────────────────────────────────────
 
+        /// <summary>
+        /// The media ranges the selected line's card would be cut from: the whole
+        /// snippet with dead space removed when the line is grouped (and gap
+        /// removal is on), otherwise the line itself. Pads applied at the edges.
+        /// </summary>
+        private List<TimeRange> RangesForAudioPreview(int idx, InfoCombined comb)
+        {
+            int padStart = Settings.Instance.AudioClips.PadEnabled ? Settings.Instance.AudioClips.PadStart : 0;
+            int padEnd = Settings.Instance.AudioClips.PadEnabled ? Settings.Instance.AudioClips.PadEnd : 0;
+
+            if (Settings.Instance.Snippets.GapRemovalEnabled && _editor != null)
+            {
+                var range = _editor.SnippetRangeOf(idx);
+                List<TimeRange> segments = range != null
+                    ? SnippetGrouping.SegmentsOf(_editor.Lines, range.Value.first, range.Value.last)
+                    : comb.Segments();
+                if (segments.Count > 1)
+                    return SnippetGrouping.TrimmedRanges(segments, Math.Max(0, Settings.Instance.Snippets.GapKeepMs), padStart, padEnd);
+            }
+
+            return new List<TimeRange>
+            {
+                new TimeRange(UtilsSubs.applyTimePad(comb.Subs1.StartTime, -padStart),
+                              UtilsSubs.applyTimePad(comb.Subs1.EndTime, padEnd))
+            };
+        }
+
         private async void OnPreviewAudio(Gtk.Button s, EventArgs e)
         {
             if (_cur == null || _wv == null) return;
@@ -1022,6 +1491,10 @@ namespace subs2srs
             _btnAudio.SetLabel("Extracting...");
 
             var comb = _cur;
+            int pos = SelectedPosition();
+            int idx = pos >= 0 ? _items[pos].Index : -1;
+            List<TimeRange> ranges = RangesForAudioPreview(idx, comb);
+
             string mp3 = SysPath.Combine(_wv.MediaDir,
                 ConstantSettings.TempAudioFilename);
             string wav = SysPath.Combine(_wv.MediaDir,
@@ -1034,14 +1507,7 @@ namespace subs2srs
                 try { if (File.Exists(mp3)) File.Delete(mp3); } catch { }
                 try { if (File.Exists(wav)) File.Delete(wav); } catch { }
 
-                TimeSpan st = comb.Subs1.StartTime, en = comb.Subs1.EndTime;
-                if (Settings.Instance.AudioClips.PadEnabled)
-                {
-                    st = UtilsSubs.applyTimePad(st,
-                        -Settings.Instance.AudioClips.PadStart);
-                    en = UtilsSubs.applyTimePad(en,
-                        Settings.Instance.AudioClips.PadEnd);
-                }
+                TimeSpan st = ranges[0].Start, en = ranges[ranges.Count - 1].End;
 
                 if (Settings.Instance.AudioClips.UseAudioFromVideo &&
                     Settings.Instance.VideoClips.Files?.Length > ep)
@@ -1059,11 +1525,17 @@ namespace subs2srs
                             ? UtilsVideo.AudioCodec.Opus
                             : UtilsVideo.AudioCodec.MP3;
 
-                        UtilsAudio.ripAudioFromVideo(
-                            Settings.Instance.VideoClips.Files[ep],
-                            streamNum, st, en,
-                            Settings.Instance.AudioClips.Bitrate, mp3, null,
-                            audioCodec);
+                        if (ranges.Count > 1)
+                            UtilsAudio.ripAudioFromVideoSegments(
+                                Settings.Instance.VideoClips.Files[ep],
+                                streamNum, ranges,
+                                Settings.Instance.AudioClips.Bitrate, mp3, audioCodec);
+                        else
+                            UtilsAudio.ripAudioFromVideo(
+                                Settings.Instance.VideoClips.Files[ep],
+                                streamNum, st, en,
+                                Settings.Instance.AudioClips.Bitrate, mp3, null,
+                                audioCodec);
 
                         if (!File.Exists(mp3) || new FileInfo(mp3).Length == 0)
                             errorMsg = "Failed to extract audio: output file not created or empty.";
@@ -1079,7 +1551,11 @@ namespace subs2srs
                     try
                     {
                         string existingAudio = Settings.Instance.AudioClips.Files[ep];
-                        UtilsAudio.cutAudio(existingAudio, st, en, mp3);
+                        if (ranges.Count > 1)
+                            UtilsAudio.cutAndEncodeAudioSegments(existingAudio, ranges,
+                                Settings.Instance.AudioClips.Bitrate, mp3);
+                        else
+                            UtilsAudio.cutAudio(existingAudio, st, en, mp3);
 
                         if (!File.Exists(mp3) || new FileInfo(mp3).Length == 0)
                             errorMsg = "Failed to cut audio: output file not created or empty.";
@@ -1176,9 +1652,17 @@ namespace subs2srs
                     if (cb.Active) tA++; else tI++;
                 }
 
+            int cards = epA;
+            if (_editor != null)
+            {
+                int[] kept = _editor.Kept;
+                cards = SnippetGrouping.JoinsToRanges(SnippetGrouping.ProjectToKept(_editor.Joins, kept), kept.Length).Count;
+            }
+
             _lblEpL.SetText(epL.ToString());
             _lblEpA.SetText(epA.ToString());
             _lblEpI.SetText(epI.ToString());
+            _lblEpC.SetText(cards.ToString());
             _lblTL.SetText(tL.ToString());
             _lblTA.SetText(tA.ToString());
             _lblTI.SetText(tI.ToString());
@@ -1200,12 +1684,66 @@ namespace subs2srs
             _guard = true;
             _wv = null;
             _cur = null;
+            _editor = null;
+            _editorEp = -1;
             _store.RemoveAll();
             _items.Clear();
             _guard = false;
 
+            LoadKeyBindings();
             PopulateEpCombo();
             RunPreviewAsync();
+        }
+
+        // ── VALIDATION EXPORT ───────────────────────────────────────────────
+
+        /// <summary>The directory "Save as validation" writes to: the preference, or &lt;OutputDir&gt;/validation.</summary>
+        internal static string ResolveValidationDir()
+        {
+            string dir = (ConstantSettings.ValidationDir ?? "").Trim();
+            if (dir.Length > 0) return dir;
+            return SysPath.Combine(Settings.Instance.OutputDir ?? "", "validation");
+        }
+
+        private void OnSaveValidation(Gtk.Button s, EventArgs e)
+        {
+            try
+            {
+                int n = SaveValidationFiles();
+                UtilsMsg.showInfoMsg($"Saved {n} validation file{(n == 1 ? "" : "s")} to:\n{ResolveValidationDir()}");
+            }
+            catch (Exception ex)
+            {
+                UtilsMsg.showErrMsg("Could not save validation files: " + ex.Message);
+            }
+        }
+
+        /// <summary>Write one grouping file per episode; returns how many were written.</summary>
+        internal int SaveValidationFiles()
+        {
+            if (_wv?.CombinedAll == null || _wv.Joins == null) return 0;
+            RefreshSettings?.Invoke(this, EventArgs.Empty);
+
+            string dir = ResolveValidationDir();
+            var limits = SnippetLimits.FromSettings();
+            string deck = Settings.Instance.DeckName;
+            if (string.IsNullOrEmpty(deck)) deck = "deck";
+            int written = 0;
+
+            for (int ep = 0; ep < _wv.CombinedAll.Count && ep < _wv.Joins.Count; ep++)
+            {
+                int episodeNumber = ep + Settings.Instance.EpisodeStartNumber;
+                string subs1 = Settings.Instance.Subs[0].Files.Length > ep ? Settings.Instance.Subs[0].Files[ep] : "";
+                string subs2 = Settings.Instance.Subs[1].Files.Length > ep ? Settings.Instance.Subs[1].Files[ep] : null;
+                bool[] proposal = _wv.ProposedJoins != null && ep < _wv.ProposedJoins.Count ? _wv.ProposedJoins[ep] : null;
+
+                var file = GroupingValidationFile.Build(_wv.CombinedAll[ep], _wv.Joins[ep], proposal,
+                    _wv.ProposalProducer ?? "rules", limits, episodeNumber, subs1, subs2);
+                file.Write(SysPath.Combine(dir, GroupingValidationFile.FileName(deck, episodeNumber)));
+                written++;
+            }
+
+            return written;
         }
 
         // ── GO (delegate to MainWindow) ─────────────────────────────────────
@@ -1325,6 +1863,15 @@ namespace subs2srs
         public string DurText { get; set; } = "";
         public bool IsActive { get; set; } = true;
         public int Index { get; set; } = -1;
+
+        /// <summary>Bracket and trimmed duration drawn in the Group column ("" for a single line).</summary>
+        public string GroupText { get; set; } = "";
+
+        /// <summary>Gap to the previous kept line, in seconds ("" for the first kept line).</summary>
+        public string GapText { get; set; } = "";
+
+        /// <summary>0 = not in a multi-line snippet, 1/2 = alternating colour band.</summary>
+        public int Band { get; set; }
 
         public static PreviewItem Create(string s1, string s2,
             string start, string end, string dur, bool active, int idx)

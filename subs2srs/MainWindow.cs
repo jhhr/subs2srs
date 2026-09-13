@@ -226,17 +226,7 @@ namespace subs2srs
             bottomHBox.Append(btnLoadProject);
 
             var btnPreview = Gtk.Button.NewWithLabel("Preview...");
-            btnPreview.OnClicked += (s, e) =>
-            {
-                SaveSettings();
-                if (_preview == null || _preview.IsDestroyed)
-                {
-                    _preview = new DialogPreview();
-                    _preview.RefreshSettings += (s2, e2) => SaveSettings();
-                    _preview.GoRequested += (s2, e2) => OnGoClicked(null, EventArgs.Empty);
-                }
-                _preview.StartPreview();
-            };
+            btnPreview.OnClicked += (s, e) => ShowPreview();
             bottomHBox.Append(btnPreview);
 
             var btnAbout = Gtk.Button.NewWithLabel("About");
@@ -1169,10 +1159,30 @@ namespace subs2srs
         private async void OnGoClicked(object? sender, EventArgs e) => await GoAsync();
 
         /// <summary>
+        /// Save the form into Settings and open (or re-run) the Preview window.
+        /// Returns the window so UI tests can drive it.
+        /// </summary>
+        internal DialogPreview ShowPreview()
+        {
+            SaveSettings();
+            if (_preview == null || _preview.IsDestroyed)
+            {
+                _preview = new DialogPreview();
+                _preview.RefreshSettings += (s2, e2) => SaveSettings();
+                _preview.GoRequested += (s2, e2) => _ = GoAsync(_preview?.PreviewVars);
+            }
+            _preview.StartPreview();
+            return _preview;
+        }
+
+        /// <summary>
         /// Validate the form, save settings and run the processor.
         /// Awaitable so UI tests can drive it without clicking.
+        /// When Go comes from the Preview, <paramref name="previewVars"/> carries the
+        /// lines it parsed, filtered and edited (plus the snippet grouping), and the
+        /// processor generates exactly those instead of re-parsing the subtitles.
         /// </summary>
-        internal async Task GoAsync()
+        internal async Task GoAsync(WorkerVars? previewVars = null)
         {
             if (!_btnGo.GetSensitive()) return;
 
@@ -1221,9 +1231,17 @@ namespace subs2srs
             _reporter = new GtkProgressReporter(_progressBar);
             var processor = new SubsProcessor();
 
+            // Work on copies so a second Go from the same preview starts from the same state.
+            List<List<InfoCombined>>? combinedAll = previewVars?.CombinedAll == null
+                ? null
+                : ObjectCopier.Clone(previewVars.CombinedAll);
+            List<bool[]>? joins = previewVars?.Joins == null
+                ? null
+                : previewVars.Joins.ConvertAll(j => (bool[])j.Clone());
+
             try
             {
-                await processor.StartAsync(_reporter);
+                await processor.StartAsync(_reporter, combinedAll, joins);
             }
             catch (Exception ex)
             {
