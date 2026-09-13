@@ -1,3 +1,6 @@
 # system
 system:dotnet
 system:ffmpeg
+# optional
+optional:mp3gain
+optional:mkvtoolnix

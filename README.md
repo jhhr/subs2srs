@@ -69,8 +69,34 @@ make build
 
 ## Test
 ```sh
-make test
+make test      # unit tests + card-generation e2e (needs ffmpeg on PATH)
+make test-ui   # GTK UI tests; needs a display (xvfb-run -a make test-ui on a headless box)
 ```
+
+The UI tests open every window, drive the main window through a full deck generation and
+exercise the Preferences dialog. Set `SUBS2SRS_UITEST_ARTIFACTS=<dir>` to get a PNG screenshot
+of each window.
+
+## Windows
+
+A portable zip (`subs2srs-<version>-win-x64.zip`) is attached to every GitHub release. It is
+self-contained: .NET and the GTK 4 runtime are included, nothing needs to be installed.
+
+1. Unzip anywhere and run `subs2srs.exe`.
+2. Install ffmpeg (not bundled): `winget install Gyan.FFmpeg`, or download a build from
+   <https://ffmpeg.org/download.html>. Either put its `bin` folder on `PATH` or point
+   **Preferences → Misc → Tools Directory** at it. `mp3gain` and `mkvtoolnix` are optional and
+   found the same way.
+3. Preferences live in `%APPDATA%\subs2srs\preferences.json`, logs in `%LOCALAPPDATA%\subs2srs\Logs`.
+
+Troubleshooting: if windows render blank or the app crashes at startup on an old GPU or over
+Remote Desktop, set the environment variable `GSK_RENDERER=cairo` (the bundled build already
+defaults to it). The log directory above contains GTK warnings and the full ffmpeg command lines.
+
+Building on Windows: install [MSYS2](https://www.msys2.org/), then
+`pacman -S mingw-w64-ucrt-x86_64-gtk4 mingw-w64-ucrt-x86_64-ntldd`, add `C:\msys64\ucrt64\bin`
+to `PATH` for development runs (`dotnet run --project subs2srs`), and use `make publish-windows`
+(or the commands in `.github/workflows/release.yml`) to produce the bundled zip.
 
 ## Install
 
@@ -99,7 +125,7 @@ sudo make uninstall
 ## Configuration
 
 On first run, `preferences.json` is created in
-`~/.config/subs2srs/`.
+`~/.config/subs2srs/` (Windows: `%APPDATA%\subs2srs\`).
 
 If a `preferences.txt` from a previous version exists in the same directory,
 it is automatically migrated to JSON on first launch. The old file is left
