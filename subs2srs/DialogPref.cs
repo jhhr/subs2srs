@@ -756,6 +756,38 @@ namespace subs2srs
                 + "Searched before PATH. Leave empty to use PATH only.",
                 PrefDefaults.ToolsDir));
             propTable["Tools Directory"] = ConstantSettings.ToolsDir;
+
+            // validation_dir
+            propTable.Properties.Add(new PropertySpec("Validation Directory", typeof(string),
+                "Snippets",
+                "Where the Preview's \"Save as validation\" writes one grouping file per episode.\n\n"
+                + "Leave empty to use <Output Directory>/validation.",
+                PrefDefaults.ValidationDir));
+            propTable["Validation Directory"] = ConstantSettings.ValidationDir;
+
+            // grouping_key_attach_above
+            propTable.Properties.Add(new PropertySpec("Key: Attach Above", typeof(string),
+                "Snippets",
+                "Preview shortcut that attaches the selected line to the line above it.\n\n"
+                + "GTK accelerator names separated by spaces, e.g. \"<Control>Up w\".",
+                PrefDefaults.GroupingKeyAttachAbove));
+            propTable["Key: Attach Above"] = ConstantSettings.GroupingKeyAttachAbove;
+
+            // grouping_key_attach_below
+            propTable.Properties.Add(new PropertySpec("Key: Attach Below", typeof(string),
+                "Snippets",
+                "Preview shortcut that attaches the selected line to the line below it.\n\n"
+                + "GTK accelerator names separated by spaces, e.g. \"<Control>Down s\".",
+                PrefDefaults.GroupingKeyAttachBelow));
+            propTable["Key: Attach Below"] = ConstantSettings.GroupingKeyAttachBelow;
+
+            // grouping_key_detach
+            propTable.Properties.Add(new PropertySpec("Key: Detach", typeof(string),
+                "Snippets",
+                "Preview shortcut that makes the selected line a card of its own.\n\n"
+                + "GTK accelerator names separated by spaces, e.g. \"<Control>BackSpace x\".",
+                PrefDefaults.GroupingKeyDetach));
+            propTable["Key: Detach"] = ConstantSettings.GroupingKeyDetach;
         }
 
         // ── GTK UI ──────────────────────────────────────────────────────────
@@ -1322,6 +1354,11 @@ namespace subs2srs
             ConstantSettings.MaxParallelTasks =
                 UtilsCommon.checkRange((int)propTable["Max Parallel Tasks"], 0, 128, PrefDefaults.MaxParallelTasks);
             ConstantSettings.ToolsDir = getStr("Tools Directory").Trim();
+
+            ConstantSettings.ValidationDir = getStr("Validation Directory").Trim();
+            ConstantSettings.GroupingKeyAttachAbove = getStr("Key: Attach Above");
+            ConstantSettings.GroupingKeyAttachBelow = getStr("Key: Attach Below");
+            ConstantSettings.GroupingKeyDetach = getStr("Key: Detach");
 
             PrefIO.Write();
         }

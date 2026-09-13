@@ -70,6 +70,13 @@ namespace subs2srs
         // Language
         private Gtk.CheckButton _chkKanjiOnly;
 
+        // Snippets
+        private Gtk.DropDown _dropSnippetMode;
+        private Gtk.SpinButton _spinSnippetMaxSec, _spinGapKeep, _spinRulesMaxGap;
+        private Gtk.CheckButton _chkGapRemoval, _chkRulesRequireCue, _chkRulesActorChange;
+        private Gtk.Entry _txtSnippetSeparator, _txtRulesCueChars;
+        private static readonly SnippetMode[] SnippetModes = { SnippetMode.Off, SnippetMode.Rules };
+
         // Dialog result
         private bool? _result;
         private GLib.MainLoop _loop;
@@ -118,6 +125,7 @@ namespace subs2srs
             notebook.AppendPage(BuildContextPage(), Gtk.Label.New("Context"));
             notebook.AppendPage(BuildActorsPage(), Gtk.Label.New("Actors"));
             notebook.AppendPage(BuildLangPage(), Gtk.Label.New("Language"));
+            notebook.AppendPage(BuildSnippetsPage(), Gtk.Label.New("Snippets"));
             outerBox.Append(notebook);
 
             // OK / Cancel
@@ -233,6 +241,90 @@ namespace subs2srs
                 _chkS2ExclLonger = chkLonger; _spinS2Longer = spinLonger;
                 _chkS2Join = chkJoin; _txtS2JoinChars = txtJoin;
             }
+
+            return vbox;
+        }
+
+        // ── SNIPPETS ────────────────────────────────────────────────────────
+
+        private Gtk.Widget BuildSnippetsPage()
+        {
+            var vbox = Gtk.Box.New(Gtk.Orientation.Vertical, 6);
+            vbox.SetMarginTop(8); vbox.SetMarginBottom(8);
+            vbox.SetMarginStart(8); vbox.SetMarginEnd(8);
+
+            var intro = Gtk.Label.New(
+                "A snippet is one card built from several consecutive lines (a question and its answer, "
+                + "a sentence split over lines). Grouping can be proposed by rules and edited in the Preview.");
+            intro.SetWrap(true);
+            intro.SetXalign(0);
+            vbox.Append(intro);
+
+            var grid = Gtk.Grid.New();
+            grid.SetRowSpacing(6); grid.SetColumnSpacing(8);
+            int r = 0;
+
+            var lblMode = Gtk.Label.New("Grouping:"); lblMode.SetHalign(Gtk.Align.End);
+            grid.Attach(lblMode, 0, r, 1, 1);
+            _dropSnippetMode = Gtk.DropDown.NewFromStrings(new[] { "Off (one card per line)", "Rules" });
+            _dropSnippetMode.SetHalign(Gtk.Align.Start);
+            grid.Attach(_dropSnippetMode, 1, r, 2, 1);
+            r++;
+
+            var lblMax = Gtk.Label.New("Max snippet length:"); lblMax.SetHalign(Gtk.Align.End);
+            grid.Attach(lblMax, 0, r, 1, 1);
+            _spinSnippetMaxSec = Gtk.SpinButton.NewWithRange(1, 120, 1); _spinSnippetMaxSec.SetValue(15);
+            grid.Attach(_spinSnippetMaxSec, 1, r, 1, 1);
+            grid.Attach(Gtk.Label.New("seconds (after gap removal)"), 2, r, 1, 1);
+            r++;
+
+            var lblSep = Gtk.Label.New("Line separator:"); lblSep.SetHalign(Gtk.Align.End);
+            grid.Attach(lblSep, 0, r, 1, 1);
+            _txtSnippetSeparator = Gtk.Entry.New(); _txtSnippetSeparator.SetText("<br>");
+            _txtSnippetSeparator.SetWidthChars(10);
+            grid.Attach(_txtSnippetSeparator, 1, r, 1, 1);
+            grid.Attach(Gtk.Label.New("put between the lines' texts on the card"), 2, r, 1, 1);
+            r++;
+
+            vbox.Append(grid);
+            vbox.Append(Gtk.Separator.New(Gtk.Orientation.Horizontal));
+
+            _chkGapRemoval = Gtk.CheckButton.NewWithLabel("Remove dead space inside a snippet; keep silences up to");
+            _spinGapKeep = Gtk.SpinButton.NewWithRange(0, 5000, 50); _spinGapKeep.SetValue(500);
+            var hbGap = Gtk.Box.New(Gtk.Orientation.Horizontal, 4);
+            hbGap.Append(_chkGapRemoval); hbGap.Append(_spinGapKeep); hbGap.Append(Gtk.Label.New("ms"));
+            _chkGapRemoval.OnToggled += (s, e) => _spinGapKeep.SetSensitive(_chkGapRemoval.GetActive());
+            vbox.Append(hbGap);
+
+            vbox.Append(Gtk.Separator.New(Gtk.Orientation.Horizontal));
+
+            var lblRules = Gtk.Label.New("Rules: join a line to the previous one when");
+            lblRules.SetXalign(0);
+            vbox.Append(lblRules);
+
+            var hbRuleGap = Gtk.Box.New(Gtk.Orientation.Horizontal, 4);
+            hbRuleGap.SetMarginStart(16);
+            hbRuleGap.Append(Gtk.Label.New("the gap between them is at most"));
+            _spinRulesMaxGap = Gtk.SpinButton.NewWithRange(0, 10000, 100); _spinRulesMaxGap.SetValue(1500);
+            hbRuleGap.Append(_spinRulesMaxGap); hbRuleGap.Append(Gtk.Label.New("ms"));
+            vbox.Append(hbRuleGap);
+
+            var hbCue = Gtk.Box.New(Gtk.Orientation.Horizontal, 4);
+            hbCue.SetMarginStart(16);
+            _chkRulesRequireCue = Gtk.CheckButton.NewWithLabel("and the previous line ends with one of");
+            _txtRulesCueChars = Gtk.Entry.New(); _txtRulesCueChars.SetText("?？…→、,");
+            _txtRulesCueChars.SetWidthChars(12);
+            hbCue.Append(_chkRulesRequireCue); hbCue.Append(_txtRulesCueChars);
+            vbox.Append(hbCue);
+
+            _chkRulesActorChange = Gtk.CheckButton.NewWithLabel("or the speaker changes (.ass actor field)");
+            _chkRulesActorChange.SetMarginStart(40);
+            vbox.Append(_chkRulesActorChange);
+            _chkRulesRequireCue.OnToggled += (s, e) =>
+            {
+                _txtRulesCueChars.SetSensitive(_chkRulesRequireCue.GetActive());
+                _chkRulesActorChange.SetSensitive(_chkRulesRequireCue.GetActive());
+            };
 
             return vbox;
         }
@@ -426,6 +518,21 @@ namespace subs2srs
 
             _chkKanjiOnly.SetActive(s.LanguageSpecific.KanjiLinesOnly);
 
+            var sn = s.Snippets ?? new SnippetSettings();
+            int modeIdx = Array.IndexOf(SnippetModes, sn.Mode);
+            _dropSnippetMode.SetSelected((uint)(modeIdx >= 0 ? modeIdx : 0));
+            _spinSnippetMaxSec.SetValue(sn.MaxSnippetSeconds);
+            _txtSnippetSeparator.SetText(sn.Separator ?? "<br>");
+            _chkGapRemoval.SetActive(sn.GapRemovalEnabled);
+            _spinGapKeep.SetValue(sn.GapKeepMs);
+            _spinRulesMaxGap.SetValue(sn.RulesMaxJoinGapMs);
+            _chkRulesRequireCue.SetActive(sn.RulesRequireCue);
+            _txtRulesCueChars.SetText(sn.RulesCueChars ?? "");
+            _chkRulesActorChange.SetActive(sn.RulesJoinOnActorChange);
+            _spinGapKeep.SetSensitive(_chkGapRemoval.GetActive());
+            _txtRulesCueChars.SetSensitive(_chkRulesRequireCue.GetActive());
+            _chkRulesActorChange.SetSensitive(_chkRulesRequireCue.GetActive());
+
             // Sensitivity
             _spinS1Fewer.SetSensitive(_chkS1ExclFewer.GetActive());
             _spinS1Shorter.SetSensitive(_chkS1ExclShorter.GetActive());
@@ -484,6 +591,18 @@ namespace subs2srs
             s.ContextTrailingRange = (int)_spinTrailRange.GetValue();
 
             s.LanguageSpecific.KanjiLinesOnly = _chkKanjiOnly.GetActive();
+
+            s.Snippets ??= new SnippetSettings();
+            uint modeSel = _dropSnippetMode.GetSelected();
+            s.Snippets.Mode = modeSel < SnippetModes.Length ? SnippetModes[modeSel] : SnippetMode.Off;
+            s.Snippets.MaxSnippetSeconds = (int)_spinSnippetMaxSec.GetValue();
+            s.Snippets.Separator = _txtSnippetSeparator.GetText();
+            s.Snippets.GapRemovalEnabled = _chkGapRemoval.GetActive();
+            s.Snippets.GapKeepMs = (int)_spinGapKeep.GetValue();
+            s.Snippets.RulesMaxJoinGapMs = (int)_spinRulesMaxGap.GetValue();
+            s.Snippets.RulesRequireCue = _chkRulesRequireCue.GetActive();
+            s.Snippets.RulesCueChars = _txtRulesCueChars.GetText();
+            s.Snippets.RulesJoinOnActorChange = _chkRulesActorChange.GetActive();
 
             // Actors
             s.ActorList.Clear();

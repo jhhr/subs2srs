@@ -156,5 +156,11 @@ namespace subs2srs
         public string DuelingQuickRefFilenameFormat { get; set; } = PrefDefaults.DuelingQuickRefFilenameFormat;
         public string DuelingQuickRefSubs1Format { get; set; } = PrefDefaults.DuelingQuickRefSubs1Format;
         public string DuelingQuickRefSubs2Format { get; set; } = PrefDefaults.DuelingQuickRefSubs2Format;
+
+        // ── Snippets ─────────────────────────────────────────────────────────
+        public string ValidationDir { get; set; } = PrefDefaults.ValidationDir;
+        public string GroupingKeyAttachAbove { get; set; } = PrefDefaults.GroupingKeyAttachAbove;
+        public string GroupingKeyAttachBelow { get; set; } = PrefDefaults.GroupingKeyAttachBelow;
+        public string GroupingKeyDetach { get; set; } = PrefDefaults.GroupingKeyDetach;
     }
 }

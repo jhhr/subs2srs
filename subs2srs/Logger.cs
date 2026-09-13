@@ -270,6 +270,16 @@ namespace subs2srs
       var(new { Settings.Instance.DeckName });
       var(new { Settings.Instance.EpisodeStartNumber });
       var(new { Settings.Instance.LanguageSpecific.KanjiLinesOnly });
+
+      var(new { Settings.Instance.Snippets.Mode });
+      var(new { Settings.Instance.Snippets.MaxSnippetSeconds });
+      var(new { Settings.Instance.Snippets.GapRemovalEnabled });
+      var(new { Settings.Instance.Snippets.GapKeepMs });
+      var(new { Settings.Instance.Snippets.Separator });
+      var(new { Settings.Instance.Snippets.RulesMaxJoinGapMs });
+      var(new { Settings.Instance.Snippets.RulesRequireCue });
+      var(new { Settings.Instance.Snippets.RulesCueChars });
+      var(new { Settings.Instance.Snippets.RulesJoinOnActorChange });
       var(new { Settings.Instance.OutputDir });
       var(new { Settings.Instance.TimeShiftEnabled });
       var(new { Settings.Instance.SpanEnabled });
@@ -290,6 +300,10 @@ namespace subs2srs
       var(new { ConstantSettings.SaveExt });
       var(new { HelpFile = ConstantSettings.HelpPage });
       var(new { ConstantSettings.ToolsDir });
+      var(new { ConstantSettings.ValidationDir });
+      var(new { ConstantSettings.GroupingKeyAttachAbove });
+      var(new { ConstantSettings.GroupingKeyAttachBelow });
+      var(new { ConstantSettings.GroupingKeyDetach });
       var(new { ConstantSettings.ExeFFmpeg });
       var(new { ConstantSettings.PathFFmpegExe });
       var(new { ConstantSettings.PathFFmpegFullExe });
