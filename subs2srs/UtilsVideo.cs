@@ -478,6 +478,54 @@ namespace subs2srs
     /// <summary>
     /// Extract a video clip from a longer video clip without re-encoding.
     /// </summary>
+    /// <summary>
+    /// Cut several ranges of one video into a single clip without re-encoding:
+    /// each range is stream-copied to a temp file next to <paramref name="outFile"/>
+    /// and the pieces are joined with the concat demuxer. Same keyframe accuracy
+    /// as <see cref="cutVideo"/>. Ranges are absolute input timestamps.
+    /// </summary>
+    public static void cutVideoSegments(string inFile, IReadOnlyList<TimeRange> ranges, string outFile)
+    {
+      if (ranges == null || ranges.Count == 0)
+        throw new ArgumentException("At least one range is required.", nameof(ranges));
+
+      if (ranges.Count == 1)
+      {
+        cutVideo(inFile, ranges[0].Start, ranges[0].End, outFile);
+        return;
+      }
+
+      string ext = Path.GetExtension(outFile);
+      string stem = Path.Combine(Path.GetDirectoryName(outFile) ?? "", Path.GetFileNameWithoutExtension(outFile));
+      string listFile = stem + ".concat.txt";
+      var parts = new List<string>(ranges.Count);
+
+      try
+      {
+        for (int i = 0; i < ranges.Count; i++)
+        {
+          string part = $"{stem}.part{i}{ext}";
+          cutVideo(inFile, ranges[i].Start, ranges[i].End, part);
+          parts.Add(part);
+        }
+
+        File.WriteAllText(listFile, UtilsGapRemoval.ConcatListFile(parts), new System.Text.UTF8Encoding(false));
+
+        // Example: -y -f concat -safe 0 -i "clip.concat.txt" -c copy "clip.avi"
+        string args = String.Format("-y -f concat -safe 0 -i \"{0}\" -c copy \"{1}\"", listFile, outFile);
+        UtilsCommon.startFFmpeg(args, false, true);
+      }
+      finally
+      {
+        foreach (string part in parts)
+        {
+          try { File.Delete(part); } catch { }
+        }
+        try { File.Delete(listFile); } catch { }
+      }
+    }
+
+
     public static void cutVideo(string inFile, TimeSpan startTime, TimeSpan endTime, string outFile)
     {
       string startTimeArg = UtilsVideo.formatStartTimeArg(startTime);

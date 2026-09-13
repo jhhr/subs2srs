@@ -191,6 +191,10 @@ namespace subs2srs
         int epNum = episodeCount; // capture for lambda
         int baseCount = progressCount;
         int audioBitrate = Settings.Instance.AudioClips.Bitrate;
+        bool gapRemoval = Settings.Instance.Snippets.GapRemovalEnabled;
+        int gapKeepMs = Math.Max(0, Settings.Instance.Snippets.GapKeepMs);
+        int padStartMs = Settings.Instance.AudioClips.PadEnabled ? Settings.Instance.AudioClips.PadStart : 0;
+        int padEndMs = Settings.Instance.AudioClips.PadEnabled ? Settings.Instance.AudioClips.PadEnd : 0;
 
         // Pre-compute work items with fixed sequence numbers
         var workItems = new List<(int seqNum, int epLineNum, InfoCombined comb)>(combArray.Count);
@@ -247,10 +251,21 @@ namespace subs2srs
 
             try
             {
+              // Multi-part card with dead-space removal: cut the parts and close the gaps.
+              // Always re-encodes (the select filter needs decoded audio).
+              List<TimeRange> segments = gapRemoval ? item.comb.Segments() : null;
+
+              if (segments != null && segments.Count > 1)
+              {
+                List<TimeRange> ranges = SnippetGrouping.TrimmedRanges(segments, gapKeepMs, padStartMs, padEndMs);
+                if (needsShift)
+                  ranges = UtilsGapRemoval.Relative(ranges, entireClipStartTime);
+                UtilsAudio.cutAndEncodeAudioSegments(fileToCut, ranges, audioBitrate, tmpName);
+              }
               // WAV source: cut + encode to mp3 (decode WAV = read bytes, ~0 CPU).
               // Seeking in WAV is byte-offset based = sample-accurate (±0.02ms).
               // MP3 source: stream copy (no re-encode, ±13ms frame boundary accuracy).
-              if (useDemuxEncode)
+              else if (useDemuxEncode)
                 UtilsAudio.cutAndEncodeAudio(fileToCut, startTime, endTime, audioBitrate, tmpName);
               else
                 UtilsAudio.cutAudio(fileToCut, startTime, endTime, tmpName);

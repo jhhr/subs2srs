@@ -79,6 +79,42 @@ namespace subs2srs
 
 
     /// <summary>
+    /// Rip several ranges of a video's audio track into one clip, dropping what
+    /// lies between them (dead-space removal). Ranges are absolute input
+    /// timestamps, sorted and non-overlapping. Used by the preview's audio button.
+    /// </summary>
+    public static void ripAudioFromVideoSegments(string inFile, string stream, IReadOnlyList<TimeRange> ranges,
+      int bitrate, string outFile, UtilsVideo.AudioCodec audioCodec = UtilsVideo.AudioCodec.MP3)
+    {
+      if (ranges == null || ranges.Count == 0)
+        throw new ArgumentException("At least one range is required.", nameof(ranges));
+
+      if (ranges.Count == 1)
+      {
+        ripAudioFromVideo(inFile, stream, ranges[0].Start, ranges[0].End, bitrate, outFile, null, audioCodec);
+        return;
+      }
+
+      TimeSpan origin = ranges[0].Start;
+      TimeSpan end = ranges[ranges.Count - 1].End;
+      string filter = UtilsGapRemoval.AudioSelectFilter(UtilsGapRemoval.Relative(ranges, origin));
+
+      // Input seek to the first range, then the filter works with timestamps relative to it.
+      string args = String.Format("-vn -y {0} -i \"{1}\" -ac 2 {2} {3} -af \"{4}\" {5} {6} -threads 0 \"{7}\"",
+        UtilsVideo.formatStartTimeArg(origin),        // {0}
+        inFile,                                       // {1}
+        UtilsVideo.formatAudioMapArg(stream),         // {2}
+        UtilsVideo.formatDurationArg(origin, end),    // {3}
+        filter,                                       // {4}
+        UtilsVideo.formatAudioCodecArg(audioCodec),   // {5}
+        UtilsVideo.formatAudioBitrateArg(bitrate),    // {6}
+        outFile);                                     // {7}
+
+      UtilsCommon.startFFmpeg(args, false, true);
+    }
+
+
+    /// <summary>
     /// Rip (and re-encode) the entire audio from a video file.
     /// </summary>
     static public void ripAudioFromVideo(string inFile, int bitrate, string outFile)
@@ -177,6 +213,45 @@ namespace subs2srs
         timeArg,         // {1}
         audioBitrateArg, // {2}
         outFile);        // {3}
+
+      UtilsCommon.startFFmpeg(args, false, true);
+    }
+
+    /// <summary>
+    /// Cut several ranges of one audio source into a single re-encoded clip,
+    /// dropping whatever lies between them (dead-space removal). Ranges are
+    /// absolute input timestamps, sorted and non-overlapping.
+    ///
+    /// The input is seeked to the first range (so a long WAV is not read from
+    /// the beginning) and the select filter then works with timestamps relative
+    /// to that seek point, which is how ffmpeg numbers frames after an input seek.
+    /// </summary>
+    public static void cutAndEncodeAudioSegments(string fileToCut, IReadOnlyList<TimeRange> ranges,
+      int bitrate, string outFile)
+    {
+      if (ranges == null || ranges.Count == 0)
+        throw new ArgumentException("At least one range is required.", nameof(ranges));
+
+      if (ranges.Count == 1)
+      {
+        cutAndEncodeAudio(fileToCut, ranges[0].Start, ranges[0].End, bitrate, outFile);
+        return;
+      }
+
+      TimeSpan origin = ranges[0].Start;
+      TimeSpan span = ranges[ranges.Count - 1].End - origin;
+      string filter = UtilsGapRemoval.AudioSelectFilter(UtilsGapRemoval.Relative(ranges, origin));
+      string audioBitrateArg = UtilsVideo.formatAudioBitrateArg(bitrate);
+
+      // Example:
+      // -y -ss 00:01:02.340 -i "decoded.wav" -t 00:00:09.100 -af "aselect='between(t,0.000,2.100)+between(t,2.600,4.000)',asetpts=N/SR/TB" -ac 2 -b:a 128k "out.opus"
+      string args = String.Format("-y {0} -i \"{1}\" {2} -vn -af \"{3}\" -ac 2 {4} \"{5}\"",
+        UtilsVideo.formatStartTimeArg(origin),          // {0}
+        fileToCut,                                      // {1}
+        UtilsVideo.formatDurationArg(origin, origin + span), // {2}
+        filter,                                         // {3}
+        audioBitrateArg,                                // {4}
+        outFile);                                       // {5}
 
       UtilsCommon.startFFmpeg(args, false, true);
     }

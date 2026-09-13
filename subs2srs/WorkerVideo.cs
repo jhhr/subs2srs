@@ -118,6 +118,10 @@ namespace subs2srs
 
         int epNum = episodeCount; // capture for lambda
         int baseCount = progressCount;
+        bool gapRemoval = Settings.Instance.Snippets.GapRemovalEnabled;
+        int gapKeepMs = Math.Max(0, Settings.Instance.Snippets.GapKeepMs);
+        int padStartMs = Settings.Instance.VideoClips.PadEnabled ? Settings.Instance.VideoClips.PadStart : 0;
+        int padEndMs = Settings.Instance.VideoClips.PadEnabled ? Settings.Instance.VideoClips.PadEnd : 0;
 
         // Pre-compute work items with fixed sequence numbers
         var workItems = new List<(int seqNum, InfoCombined comb)>(combArray.Count);
@@ -157,7 +161,21 @@ namespace subs2srs
           {
             string ext = Path.GetExtension(outFile);
             string tmpFile = Path.ChangeExtension(outFile, ".tmp" + ext);
-            UtilsVideo.cutVideo(tempVideoFilename, startTime, endTime, tmpFile);
+
+            // Multi-part card with dead-space removal: stream-copy each part and concatenate.
+            List<TimeRange> segments = gapRemoval ? item.comb.Segments() : null;
+
+            if (segments != null && segments.Count > 1)
+            {
+              List<TimeRange> ranges = UtilsGapRemoval.Relative(
+                SnippetGrouping.TrimmedRanges(segments, gapKeepMs, padStartMs, padEndMs), entireClipStartTime);
+              UtilsVideo.cutVideoSegments(tempVideoFilename, ranges, tmpFile);
+            }
+            else
+            {
+              UtilsVideo.cutVideo(tempVideoFilename, startTime, endTime, tmpFile);
+            }
+
             File.Move(tmpFile, outFile, overwrite: true);
           }
 

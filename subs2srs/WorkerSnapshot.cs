@@ -74,7 +74,7 @@ namespace subs2srs
           InfoCombined comb = item.comb;
           TimeSpan startTime = comb.Subs1.StartTime;
           TimeSpan endTime = comb.Subs1.EndTime;
-          TimeSpan midTime = UtilsSubs.getMidpointTime(startTime, endTime);
+          TimeSpan midTime = UtilsSubs.getSnapshotTime(comb);
 
           string videoFileName = Settings.Instance.VideoClips.Files[epNum - 1];
 
