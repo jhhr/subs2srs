@@ -1,0 +1,224 @@
+{
+  "version": 1,
+  "dependencies": {
+    "net10.0": {
+      "Microsoft.NET.Test.Sdk": {
+        "type": "Direct",
+        "requested": "[17.12.0, )",
+        "resolved": "17.12.0",
+        "contentHash": "kt/PKBZ91rFCWxVIJZSgVLk+YR+4KxTuHf799ho8WNiK5ZQpJNAEZCAWX86vcKrs+DiYjiibpYKdGZP6+/N17w==",
+        "dependencies": {
+          "Microsoft.CodeCoverage": "17.12.0",
+          "Microsoft.TestPlatform.TestHost": "17.12.0"
+        }
+      },
+      "xunit": {
+        "type": "Direct",
+        "requested": "[2.9.3, )",
+        "resolved": "2.9.3",
+        "contentHash": "TlXQBinK35LpOPKHAqbLY4xlEen9TBafjs0V5KnA4wZsoQLQJiirCR4CbIXvOH8NzkW4YeJKP5P/Bnrodm0h9Q==",
+        "dependencies": {
+          "xunit.analyzers": "1.18.0",
+          "xunit.assert": "2.9.3",
+          "xunit.core": "[2.9.3]"
+        }
+      },
+      "xunit.runner.visualstudio": {
+        "type": "Direct",
+        "requested": "[2.8.2, )",
+        "resolved": "2.8.2",
+        "contentHash": "vm1tbfXhFmjFMUmS4M0J0ASXz3/U5XvXBa6DOQUL3fEz4Vt6YPhv+ESCarx6M6D+9kJkJYZKCNvJMas1+nVfmQ=="
+      },
+      "GirCore.Cairo-1.0": {
+        "type": "Transitive",
+        "resolved": "0.7.0",
+        "contentHash": "pAfml9ObPSnxRM6GQEVlGEQWxd3Rw7/k0Y0U+Q5+ja8Pa8m9LdDRDhlNrDyy783NrxyoI1amTcp4aTSfLYkfiA==",
+        "dependencies": {
+          "GirCore.GObject-2.0": "0.7.0"
+        }
+      },
+      "GirCore.FreeType2-2.0": {
+        "type": "Transitive",
+        "resolved": "0.7.0",
+        "contentHash": "SLDUDCw2XFxBph5E+xLRkzpCqz+A5JygaNZ+U4jotI2tBsBNQG9qRv85EC5lPtPJa7+XVf1BbWTyV0O/R8tojA==",
+        "dependencies": {
+          "GirCore.GLib-2.0": "0.7.0",
+          "GirCore.GObject-2.0": "0.7.0"
+        }
+      },
+      "GirCore.Gdk-4.0": {
+        "type": "Transitive",
+        "resolved": "0.7.0",
+        "contentHash": "zjBRx2ZY8DDe7Ymr/ID2Xwk05TT0aWslIRbR5tmjSfSfT9NKQ1COw2l0idI1cl0mc8JtK3zWeWg/9RIZqJH6zA==",
+        "dependencies": {
+          "GirCore.Cairo-1.0": "0.7.0",
+          "GirCore.GdkPixbuf-2.0": "0.7.0",
+          "GirCore.Gio-2.0": "0.7.0",
+          "GirCore.Pango-1.0": "0.7.0",
+          "GirCore.PangoCairo-1.0": "0.7.0"
+        }
+      },
+      "GirCore.GdkPixbuf-2.0": {
+        "type": "Transitive",
+        "resolved": "0.7.0",
+        "contentHash": "1OHjfGeTvYG6iF7dcdFlC++JurO47VO0Fmw9CkUNk4O6BXr2qHogZKWpnII4AkCiZJlA5sjoeTrxxS1QfIAvVw==",
+        "dependencies": {
+          "GirCore.Gio-2.0": "0.7.0"
+        }
+      },
+      "GirCore.Gio-2.0": {
+        "type": "Transitive",
+        "resolved": "0.7.0",
+        "contentHash": "E0Ubm/FjAgBBW5o4m33TIsnFe9McoOne8bHo6c8mi8ajuDMpAPMhboBgIdQWDvPEMcSkLrdg/NR3kRTUeS/2KQ==",
+        "dependencies": {
+          "GirCore.GObject-2.0": "0.7.0"
+        }
+      },
+      "GirCore.GLib-2.0": {
+        "type": "Transitive",
+        "resolved": "0.7.0",
+        "contentHash": "RaFYLZTRpKYRJrvMa1/ctrQQfAX5rTpZzFRudCp9AVQOdOYQl3LYqVAqc4otFTD6bIXpoV0msm7azGCfyF7XbQ=="
+      },
+      "GirCore.GObject-2.0": {
+        "type": "Transitive",
+        "resolved": "0.7.0",
+        "contentHash": "95ehT1EbreYDFAQJposjK+0olBcWjLSs3hie3j8lL3MtCgrAMFzQuJU8Qdz0jAUl9WX2a0pb5mv1ZkUCFAbbKA==",
+        "dependencies": {
+          "GirCore.GLib-2.0": "0.7.0"
+        }
+      },
+      "GirCore.Graphene-1.0": {
+        "type": "Transitive",
+        "resolved": "0.7.0",
+        "contentHash": "MI9tWmhQYQr/8mKnETDfNm7owLLl59fB8SZxGb6r+twED8Ht+dVPYRayfnUHZXA2RkI9IcaFBgLoSXMYRGU4CA==",
+        "dependencies": {
+          "GirCore.GObject-2.0": "0.7.0"
+        }
+      },
+      "GirCore.Gsk-4.0": {
+        "type": "Transitive",
+        "resolved": "0.7.0",
+        "contentHash": "rcwMMx4UIETIzhepudeOmz6Iy9nNofwcs+cpkaO3FJ169aeuY/4wAjR85ErvIHpbntFQ1MQ8Jqk0ILH2/qQdlQ==",
+        "dependencies": {
+          "GirCore.Gdk-4.0": "0.7.0",
+          "GirCore.Graphene-1.0": "0.7.0"
+        }
+      },
+      "GirCore.Gtk-4.0": {
+        "type": "Transitive",
+        "resolved": "0.7.0",
+        "contentHash": "CUNtwNQNUEvug70ird+LFaH4bhuKMmIygkeAbk6RdP/m1EOycRt2+tX4s/2ImnwRNl5rnWt+PSEeujYUnhka2Q==",
+        "dependencies": {
+          "GirCore.Gdk-4.0": "0.7.0",
+          "GirCore.Gsk-4.0": "0.7.0"
+        }
+      },
+      "GirCore.HarfBuzz-0.0": {
+        "type": "Transitive",
+        "resolved": "0.7.0",
+        "contentHash": "Agiqbvs32egK/XyB3waa54W3qPNgyEqE5laEdjWY8GfzFp5Dxw/pYQJQoNVaNPChQCtMdTKTGP9EdbUiw4FAMQ==",
+        "dependencies": {
+          "GirCore.FreeType2-2.0": "0.7.0",
+          "GirCore.GObject-2.0": "0.7.0"
+        }
+      },
+      "GirCore.Pango-1.0": {
+        "type": "Transitive",
+        "resolved": "0.7.0",
+        "contentHash": "f4kMumRl0rdPaiffNdXXM/vt0FLaHbNG44MYtFK9c+danngo7naIiwizkWJQMUGPFTNglrP/nSgN8mobOiCt3w==",
+        "dependencies": {
+          "GirCore.Cairo-1.0": "0.7.0",
+          "GirCore.GObject-2.0": "0.7.0",
+          "GirCore.Gio-2.0": "0.7.0",
+          "GirCore.HarfBuzz-0.0": "0.7.0"
+        }
+      },
+      "GirCore.PangoCairo-1.0": {
+        "type": "Transitive",
+        "resolved": "0.7.0",
+        "contentHash": "cgSLsyORj0TxBZVchzfdu8mp7kZXoUwAfkbKMoKSDhgo/HVmaOHulXZZU5iWU6PZ9Bvzk+ks3lSyjDHCuK+IrQ==",
+        "dependencies": {
+          "GirCore.Cairo-1.0": "0.7.0",
+          "GirCore.GObject-2.0": "0.7.0",
+          "GirCore.Pango-1.0": "0.7.0"
+        }
+      },
+      "Microsoft.CodeCoverage": {
+        "type": "Transitive",
+        "resolved": "17.12.0",
+        "contentHash": "4svMznBd5JM21JIG2xZKGNanAHNXplxf/kQDFfLHXQ3OnpJkayRK/TjacFjA+EYmoyuNXHo/sOETEfcYtAzIrA=="
+      },
+      "Microsoft.TestPlatform.ObjectModel": {
+        "type": "Transitive",
+        "resolved": "17.12.0",
+        "contentHash": "TDqkTKLfQuAaPcEb3pDDWnh7b3SyZF+/W9OZvWFp6eJCIiiYFdSB6taE2I6tWrFw5ywhzOb6sreoGJTI6m3rSQ=="
+      },
+      "Microsoft.TestPlatform.TestHost": {
+        "type": "Transitive",
+        "resolved": "17.12.0",
+        "contentHash": "MiPEJQNyADfwZ4pJNpQex+t9/jOClBGMiCiVVFuELCMSX2nmNfvUor3uFVxNNCg30uxDP8JDYfPnMXQzsfzYyg==",
+        "dependencies": {
+          "Microsoft.TestPlatform.ObjectModel": "17.12.0",
+          "Newtonsoft.Json": "13.0.1"
+        }
+      },
+      "Newtonsoft.Json": {
+        "type": "Transitive",
+        "resolved": "13.0.1",
+        "contentHash": "ppPFpBcvxdsfUonNcvITKqLl3bqxWbDCZIzDWHzjpdAHRFfZe0Dw9HmA0+za13IdyrgJwpkDTDA9fHaxOrt20A=="
+      },
+      "TagLibSharp": {
+        "type": "Transitive",
+        "resolved": "2.3.0",
+        "contentHash": "Qo4z6ZjnIfbR3Us1Za5M2vQ97OWZPmODvVmepxZ8XW0UIVLGdO2T63/N3b23kCcyiwuIe0TQvMEQG8wUCCD1mA=="
+      },
+      "xunit.abstractions": {
+        "type": "Transitive",
+        "resolved": "2.0.3",
+        "contentHash": "pot1I4YOxlWjIb5jmwvvQNbTrZ3lJQ+jUGkGjWE3hEFM0l5gOnBWS+H3qsex68s5cO52g+44vpGzhAt+42vwKg=="
+      },
+      "xunit.analyzers": {
+        "type": "Transitive",
+        "resolved": "1.18.0",
+        "contentHash": "OtFMHN8yqIcYP9wcVIgJrq01AfTxijjAqVDy/WeQVSyrDC1RzBWeQPztL49DN2syXRah8TYnfvk035s7L95EZQ=="
+      },
+      "xunit.assert": {
+        "type": "Transitive",
+        "resolved": "2.9.3",
+        "contentHash": "/Kq28fCE7MjOV42YLVRAJzRF0WmEqsmflm0cfpMjGtzQ2lR5mYVj1/i0Y8uDAOLczkL3/jArrwehfMD0YogMAA=="
+      },
+      "xunit.core": {
+        "type": "Transitive",
+        "resolved": "2.9.3",
+        "contentHash": "BiAEvqGvyme19wE0wTKdADH+NloYqikiU0mcnmiNyXaF9HyHmE6sr/3DC5vnBkgsWaE6yPyWszKSPSApWdRVeQ==",
+        "dependencies": {
+          "xunit.extensibility.core": "[2.9.3]",
+          "xunit.extensibility.execution": "[2.9.3]"
+        }
+      },
+      "xunit.extensibility.core": {
+        "type": "Transitive",
+        "resolved": "2.9.3",
+        "contentHash": "kf3si0YTn2a8J8eZNb+zFpwfoyvIrQ7ivNk5ZYA5yuYk1bEtMe4DxJ2CF/qsRgmEnDr7MnW1mxylBaHTZ4qErA==",
+        "dependencies": {
+          "xunit.abstractions": "2.0.3"
+        }
+      },
+      "xunit.extensibility.execution": {
+        "type": "Transitive",
+        "resolved": "2.9.3",
+        "contentHash": "yMb6vMESlSrE3Wfj7V6cjQ3S4TXdXpRqYeNEI3zsX31uTsGMJjEw6oD5F5u1cHnMptjhEECnmZSsPxB6ChZHDQ==",
+        "dependencies": {
+          "xunit.extensibility.core": "[2.9.3]"
+        }
+      },
+      "subs2srs": {
+        "type": "Project",
+        "dependencies": {
+          "GirCore.Gtk-4.0": "[0.7.0, )",
+          "TagLibSharp": "[2.3.0, )"
+        }
+      }
+    }
+  }
+}
