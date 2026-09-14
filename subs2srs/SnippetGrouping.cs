@@ -106,9 +106,12 @@ namespace subs2srs
   /// - "kept joins": the projection of the join vector onto the kept lines
   ///   (length = kept.Length - 1 conceptually; stored with length kept.Length).
   ///
-  /// A snippet covering kept lines a..b contains every line between them,
-  /// including omitted ones: their dialogue is audible inside the span, so
-  /// their text and audio are kept. They still never count as mineable lines.
+  /// A snippet covering kept lines a..b is built as if the omitted lines between
+  /// them did not exist: their text is not merged in, their dialogue ranges are
+  /// not part of the card's segments (the media workers cut them away) and they
+  /// do not count toward the duration limit. They travel along in
+  /// <see cref="InfoCombined.Parts"/> only so that <see cref="Flatten"/> can put
+  /// them back in place.
   /// </summary>
   public static class SnippetGrouping
   {
@@ -131,12 +134,25 @@ namespace subs2srs
 
     // ── segments and trimmed durations ─────────────────────────────────
 
-    /// <summary>All dialogue segments of lines[first..last] (full indices), sorted and merged.</summary>
+    /// <summary>
+    /// The dialogue segments of the kept lines among lines[first..last] (full
+    /// indices), sorted and merged. A single-line range (first == last) yields
+    /// that line's segments whether or not it is kept.
+    /// </summary>
     public static List<TimeRange> SegmentsOf(IReadOnlyList<InfoCombined> lines, int first, int last)
     {
       var segs = new List<TimeRange>();
       for (int i = first; i <= last; i++)
-        segs.AddRange(lines[i].Segments());
+        if (lines[i].Active || first == last) segs.AddRange(lines[i].Segments());
+      return MergeOverlaps(segs);
+    }
+
+    /// <summary>The dialogue segments of the omitted lines among lines[first..last], sorted and merged.</summary>
+    public static List<TimeRange> OmittedSegmentsOf(IReadOnlyList<InfoCombined> lines, int first, int last)
+    {
+      var segs = new List<TimeRange>();
+      for (int i = first; i <= last; i++)
+        if (!lines[i].Active && first != last) segs.AddRange(lines[i].Segments());
       return MergeOverlaps(segs);
     }
 
@@ -317,8 +333,9 @@ namespace subs2srs
     /// <summary>
     /// Replace runs of joined kept lines with snippet InfoCombineds. Lines not
     /// covered by any snippet (including inactive ones) are passed through
-    /// unchanged, in order. A snippet absorbs every line between its first and
-    /// last kept line, so omitted lines inside the span become parts.
+    /// unchanged, in order. Omitted lines between a snippet's first and last
+    /// kept line are carried in its Parts (for <see cref="Flatten"/>) but
+    /// contribute no text, media or duration to it.
     /// </summary>
     public static List<InfoCombined> Materialize(IReadOnlyList<InfoCombined> lines, bool[] fullJoins,
       string separator, Func<IReadOnlyList<InfoCombined>, int, int, string?>? noteFor = null)

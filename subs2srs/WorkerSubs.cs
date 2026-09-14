@@ -1087,7 +1087,9 @@ namespace subs2srs
     private static string describeSnippet(IReadOnlyList<InfoCombined> lines, int first, int last, SnippetLimits limits)
     {
       int ms = SnippetGrouping.TrimmedDurationMs(lines, first, last, limits);
-      string text = FormattableString.Invariant($"{last - first + 1} lines, {ms / 1000.0:0.0} s");
+      int keptLines = 0;
+      for (int i = first; i <= last; i++) if (lines[i].Active) keptLines++;
+      string text = FormattableString.Invariant($"{keptLines} lines, {ms / 1000.0:0.0} s");
       string aiNote = lines[first].GroupNote;
       return string.IsNullOrEmpty(aiNote) ? text : text + ": " + aiNote;
     }

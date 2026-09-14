@@ -96,11 +96,28 @@ namespace subs2srs.Tests
         }
 
         [Fact]
-        public void TrimmedDuration_OfLines_IncludesAbsorbedInactiveLinesAndPad()
+        public void TrimmedDuration_OfLines_IgnoresOmittedLinesInsideAndAddsThePad()
         {
             var lines = new List<InfoCombined> { Line(10, 11, "a"), Line(11.2, 11.7, "b", active: false), Line(13, 14, "c") };
-            // 1000 + 200 + 500 + min(1300, 500) + 1000 + pad 300
-            Assert.Equal(3500, SnippetGrouping.TrimmedDurationMs(lines, 0, 2, Limits(keepMs: 500, padMs: 300)));
+            // 1000 + min(2000, 500) + 1000 + pad 300; the omitted line adds nothing
+            Assert.Equal(2800, SnippetGrouping.TrimmedDurationMs(lines, 0, 2, Limits(keepMs: 500, padMs: 300)));
+        }
+
+        [Fact]
+        public void SegmentsOf_SkipsOmittedLinesInARange_ButNotASingleOmittedLine()
+        {
+            var lines = new List<InfoCombined> { Line(10, 11, "a"), Line(11.2, 11.7, "b", active: false), Line(13, 14, "c") };
+
+            var segs = SnippetGrouping.SegmentsOf(lines, 0, 2);
+            Assert.Equal(new[] { R(10, 11).ToString(), R(13, 14).ToString() }, segs.Select(r => r.ToString()));
+
+            var omitted = SnippetGrouping.OmittedSegmentsOf(lines, 0, 2);
+            Assert.Equal(new[] { R(11.2, 11.7).ToString() }, omitted.Select(r => r.ToString()));
+
+            // a single omitted line still has its own duration (the preview shows it)
+            Assert.Equal(new[] { R(11.2, 11.7).ToString() }, SnippetGrouping.SegmentsOf(lines, 1, 1).Select(r => r.ToString()));
+            Assert.Empty(SnippetGrouping.OmittedSegmentsOf(lines, 1, 1));
+            Assert.Equal(500, SnippetGrouping.TrimmedDurationMs(lines, 1, 1, Limits()));
         }
 
         [Fact]
@@ -161,7 +178,7 @@ namespace subs2srs.Tests
         }
 
         [Fact]
-        public void Materialize_BuildsSnippetWithMergedViewAndAbsorbsInactiveLinesInside()
+        public void Materialize_BuildsSnippetWithMergedView_AsIfOmittedLinesInsideDidNotExist()
         {
             var lines = new List<InfoCombined>
             {
@@ -174,9 +191,12 @@ namespace subs2srs.Tests
             Assert.Equal(3, cards.Count);
             InfoCombined snippet = cards[0];
             Assert.True(snippet.IsSnippet);
-            Assert.Equal(3, snippet.PartCount);
-            Assert.Equal("A<br>hm<br>C", snippet.Subs1.Text);
-            Assert.Equal("A<br>HM<br>C", snippet.Subs2.Text);
+            Assert.Equal(2, snippet.PartCount);
+            Assert.Equal(3, snippet.Parts.Count); // the omitted line travels along for Flatten
+            Assert.Equal("A<br>C", snippet.Subs1.Text);
+            Assert.Equal("A<br>C", snippet.Subs2.Text);
+            Assert.DoesNotContain("hm", snippet.Subs1.Text);
+            Assert.DoesNotContain("HM", snippet.Subs2.Text);
             Assert.Equal(TimeSpan.FromSeconds(1), snippet.Subs1.StartTime);
             Assert.Equal(TimeSpan.FromSeconds(4), snippet.Subs1.EndTime);
             Assert.True(snippet.Active);
@@ -185,8 +205,31 @@ namespace subs2srs.Tests
             Assert.Same(lines[4], cards[2]);
 
             var segs = snippet.Segments();
-            Assert.Equal(3, segs.Count);
-            Assert.Equal(TimeSpan.FromSeconds(2.2), segs[1].Start);
+            Assert.Equal(new[] { R(1, 2).ToString(), R(3, 4).ToString() }, segs.Select(r => r.ToString()));
+            Assert.Equal(new[] { R(2.2, 2.5).ToString() }, snippet.OmittedSegments().Select(r => r.ToString()));
+            Assert.Equal(new[] { lines[0], lines[2] }, snippet.KeptParts);
+            Assert.Equal(new[] { lines[1] }, snippet.OmittedParts);
+        }
+
+        [Fact]
+        public void CreateSnippet_OmittedFirstOrLastPart_DoesNotStretchTheMergedTimes()
+        {
+            var parts = new List<InfoCombined> { Line(0.5, 0.9, "x", active: false), Line(1, 2, "A"), Line(3, 4, "C"), Line(4.2, 5, "y", active: false) };
+            var snippet = InfoCombined.CreateSnippet(parts, " ");
+            Assert.Equal("A C", snippet.Subs1.Text);
+            Assert.Equal(TimeSpan.FromSeconds(1), snippet.Subs1.StartTime);
+            Assert.Equal(TimeSpan.FromSeconds(4), snippet.Subs1.EndTime);
+            Assert.Equal(2, snippet.Segments().Count);
+        }
+
+        [Fact]
+        public void CreateSnippet_AllPartsOmitted_FallsBackToEveryPart()
+        {
+            var parts = new List<InfoCombined> { Line(1, 2, "A", active: false), Line(3, 4, "C", active: false) };
+            var snippet = InfoCombined.CreateSnippet(parts, " ");
+            Assert.Equal("A C", snippet.Subs1.Text);
+            Assert.Equal(2, snippet.PartCount);
+            Assert.Empty(snippet.OmittedSegments());
         }
 
         [Fact]
@@ -292,6 +335,27 @@ namespace subs2srs.Tests
             var lines = new List<InfoCombined> { Line(0, 8, "a?"), Line(8.5, 14, "b?"), Line(14.5, 20, "c?") };
             bool[] joins = RuleBasedGrouper.GroupEpisode(lines, Limits(15_000), new RuleGrouperOptions());
             Assert.Equal(new[] { true, false, false }, joins);
+        }
+
+        [Fact]
+        public void Rules_DoNotCountAnOmittedLineTowardTheLimit()
+        {
+            // a? (7 s) + omitted 5 s line + c? (7 s): 7 + 0.5 + 7 = 14.5 s fits; with the omitted line it would not
+            var lines = new List<InfoCombined> { Line(0, 7, "a?"), Line(7.2, 12.2, "b", active: false), Line(13, 20, "c?") };
+            var options = new RuleGrouperOptions { MaxJoinGapMs = 10_000 };
+            bool[] joins = RuleBasedGrouper.GroupEpisode(lines, Limits(15_000), options);
+            Assert.Equal(new[] { true, false, false }, joins);
+        }
+
+        [Fact]
+        public void Repair_DoesNotCountAnOmittedLineTowardTheLimit()
+        {
+            var lines = new List<InfoCombined> { Line(0, 7, "a?"), Line(7.2, 12.2, "b", active: false), Line(13, 20, "c?") };
+            int[] kept = SnippetGrouping.KeptIndices(lines);
+            var log = new List<string>();
+            bool[] repaired = SnippetGrouping.Repair(lines, kept, new[] { true, false }, Limits(15_000), log);
+            Assert.Equal(new[] { true, false }, repaired);
+            Assert.Empty(log);
         }
 
         [Fact]

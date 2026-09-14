@@ -75,7 +75,10 @@ namespace subs2srs
 
     /// <summary>
     /// The lines this snippet was built from, in order; null for a plain single line.
-    /// Each part is a plain (non-snippet) InfoCombined.
+    /// Each part is a plain (non-snippet) InfoCombined. Every line of the span is
+    /// here, including omitted (inactive) ones, so that <see cref="SnippetGrouping.Flatten"/>
+    /// can restore their position; but an omitted part contributes nothing to the
+    /// card: no text, no media segment, no duration (see <see cref="KeptParts"/>).
     /// </summary>
     public List<InfoCombined>? Parts { get; set; }
 
@@ -112,15 +115,38 @@ namespace subs2srs
     [JsonIgnore]
     public bool IsSnippet => Parts != null && Parts.Count > 1;
 
-    /// <summary>Number of subtitle lines this card is built from (1 for a plain line).</summary>
+    /// <summary>Number of subtitle lines this card is built from (1 for a plain line); omitted parts do not count.</summary>
     [JsonIgnore]
-    public int PartCount => Parts == null ? 1 : Parts.Count;
+    public int PartCount => Parts == null ? 1 : KeptParts.Count;
+
+    /// <summary>
+    /// The parts that make up the card: the active ones, or every part when none
+    /// is active (so a snippet built from inactive lines still has a merged view).
+    /// Empty for a plain line.
+    /// </summary>
+    [JsonIgnore]
+    public List<InfoCombined> KeptParts => keptOf(Parts);
+
+    /// <summary>The omitted (inactive) parts of a snippet; empty for a plain line or when no part is omitted.</summary>
+    [JsonIgnore]
+    public List<InfoCombined> OmittedParts
+    {
+      get
+      {
+        var result = new List<InfoCombined>();
+        if (Parts == null) return result;
+        List<InfoCombined> kept = keptOf(Parts);
+        foreach (InfoCombined part in Parts)
+          if (!kept.Contains(part)) result.Add(part);
+        return result;
+      }
+    }
 
     /// <summary>
     /// The time ranges of spoken dialogue in this card, in order, using Subs1 timings.
     /// A plain line yields its own range (or the ranges recorded by the
     /// sentence-join feature, when they are consistent with the line's timing).
-    /// A snippet yields the ranges of its parts. Ranges never overlap and are sorted.
+    /// A snippet yields the ranges of its kept parts only. Ranges never overlap and are sorted.
     /// </summary>
     public List<TimeRange> Segments()
     {
@@ -128,7 +154,7 @@ namespace subs2srs
 
       if (Parts != null && Parts.Count > 0)
       {
-        foreach (InfoCombined part in Parts)
+        foreach (InfoCombined part in KeptParts)
           result.AddRange(part.Segments());
       }
       else if (Subs1.Segments != null && Subs1.Segments.Count > 0 && segmentsAreConsistent(Subs1))
@@ -145,9 +171,23 @@ namespace subs2srs
     }
 
     /// <summary>
-    /// Build a snippet from consecutive lines. Subs1/Subs2 become the merged view:
-    /// text joined with <paramref name="separator"/> (empty texts skipped),
-    /// StartTime of the first part, EndTime of the last part, actor of the first part.
+    /// The dialogue ranges of the omitted parts of a snippet (what must never be
+    /// heard or seen on the card), sorted and merged. Empty for a plain line.
+    /// </summary>
+    public List<TimeRange> OmittedSegments()
+    {
+      var result = new List<TimeRange>();
+      foreach (InfoCombined part in OmittedParts)
+        result.AddRange(part.Segments());
+      return mergeOverlaps(result);
+    }
+
+    /// <summary>
+    /// Build a snippet from consecutive lines. Subs1/Subs2 become the merged view
+    /// of the kept parts: text joined with <paramref name="separator"/> (empty
+    /// texts skipped), StartTime of the first kept part, EndTime of the last kept
+    /// part, actor of the first kept part. Omitted parts are carried in
+    /// <see cref="Parts"/> but contribute nothing.
     /// A single part yields a clone-free wrapper that behaves like the part itself.
     /// </summary>
     public static InfoCombined CreateSnippet(IList<InfoCombined> parts, string separator, string? note = null)
@@ -162,10 +202,11 @@ namespace subs2srs
         return only;
       }
 
+      List<InfoCombined> kept = keptOf(parts);
       var snippet = new InfoCombined
       {
-        Subs1 = mergeLines(parts, true, separator),
-        Subs2 = mergeLines(parts, false, separator),
+        Subs1 = mergeLines(kept, true, separator),
+        Subs2 = mergeLines(kept, false, separator),
         Active = true,
         OnlyNeededForContext = false,
         Parts = new List<InfoCombined>(parts),
@@ -173,6 +214,17 @@ namespace subs2srs
       };
 
       return snippet;
+    }
+
+    /// <summary>The active entries of <paramref name="parts"/>, or all of them when none is active; empty for null.</summary>
+    private static List<InfoCombined> keptOf(IList<InfoCombined>? parts)
+    {
+      var kept = new List<InfoCombined>();
+      if (parts == null) return kept;
+      foreach (InfoCombined part in parts)
+        if (part.Active) kept.Add(part);
+      if (kept.Count == 0) kept.AddRange(parts);
+      return kept;
     }
 
     private static InfoLine mergeLines(IList<InfoCombined> parts, bool subs1, string separator)
