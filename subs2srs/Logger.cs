@@ -20,6 +20,10 @@ namespace subs2srs
     public static Logger Instance => instance;
 
 
+    /// <summary>Optional mirror of every appended line, e.g. the eval console printing the log to stderr.</summary>
+    public Action<string>? Echo { get; set; }
+
+
     private Logger()
     {
       if (!ConstantSettings.EnableLogging)
@@ -109,6 +113,7 @@ namespace subs2srs
         builder.Append(createTimestamp());
         builder.AppendLine(text);
       }
+      Echo?.Invoke(text);
     }
 
     /// <summary>

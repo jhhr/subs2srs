@@ -172,7 +172,7 @@ namespace subs2srs.Tests
       GroupingEvalSet external = GroupingEvalSet.Load(set, outside);
       Assert.Equal(2, external.Tuning.Count());
       Assert.Equal(new[] { "holdout/c.grouping.json" }, external.Holdout.Select(f => f.RelativePath).ToArray());
-      Assert.True(external.Holdout.First().Path.StartsWith(outside, StringComparison.OrdinalIgnoreCase));
+      Assert.StartsWith(outside, external.Holdout.First().Path, StringComparison.OrdinalIgnoreCase);
 
       Assert.Empty(GroupingEvalSet.Load(Path.Combine(scope.TempDir, "missing")).Files);
     }

@@ -18,6 +18,7 @@
 
   <ItemGroup>
     <ProjectReference Include="../subs2srs/subs2srs.csproj" />
+    <ProjectReference Include="../subs2srs.Eval/subs2srs.Eval.csproj" />
   </ItemGroup>
 
   <ItemGroup>

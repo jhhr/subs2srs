@@ -6,6 +6,7 @@ on:
       - 'subs2srs/**'
       - 'subs2srs.Tests/**'
       - 'subs2srs.UiTests/**'
+      - 'subs2srs.Eval/**'
       - 'dist/**'
       - 'Makefile'
       - '.github/workflows/ci.yml'
@@ -14,6 +15,7 @@ on:
       - 'subs2srs/**'
       - 'subs2srs.Tests/**'
       - 'subs2srs.UiTests/**'
+      - 'subs2srs.Eval/**'
       - 'dist/**'
       - 'Makefile'
       - '.github/workflows/ci.yml'
@@ -39,6 +41,7 @@ jobs:
       - name: Restore (locked)
         run: |
           dotnet restore subs2srs/subs2srs.csproj --locked-mode
+          dotnet restore subs2srs.Eval/subs2srs.Eval.csproj --locked-mode
           dotnet restore subs2srs.Tests/subs2srs.Tests.csproj --locked-mode
           dotnet restore subs2srs.UiTests/subs2srs.UiTests.csproj --locked-mode
       - run: dotnet build subs2srs/subs2srs.csproj -c Release --no-restore
@@ -95,6 +98,7 @@ jobs:
       - name: Restore (locked)
         run: |
           dotnet restore subs2srs/subs2srs.csproj --locked-mode
+          dotnet restore subs2srs.Eval/subs2srs.Eval.csproj --locked-mode
           dotnet restore subs2srs.Tests/subs2srs.Tests.csproj --locked-mode
           dotnet restore subs2srs.UiTests/subs2srs.UiTests.csproj --locked-mode
       - run: dotnet build subs2srs/subs2srs.csproj -c Release --no-restore
