@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+**Animated snapshots** (Snapshots tab):
+- A new output type next to the still snapshot: a short, silent animation of the line cut straight from the source video, as animated **WebP** (plays in every Anki client) or animated **AVIF** (smaller; needs a recent Anki). Options: frames per second (10), height (350 px, width keeps the aspect ratio, never upscaled), quality (0-100 on libwebp's scale, 20 by default; mapped onto the AV1 `crf` scale for AVIF) and crop bottom. Off by default.
+- The import file gets one more `<img>` column right after the snapshot, following the same context-line rules as snapshots. Filenames come from the new *Animated Snapshot Filename Format* preference (the start-end pattern of video clips) plus `.webp`/`.avif`.
+- Inside a multi-line card with dead-space removal on, the removed silences are cut from the animation too (`select`/`setpts` in front of the scaling filter).
+- The startup check probes `ffmpeg -encoders`: without `libwebp_anim`/`libwebp` (or `libaom-av1`/`libsvtav1` for AVIF) the option is switched off and disabled with a hint. Project files gain an `animatedSnapshots` section.
+
 **Multi-line snippets** (Advanced Subtitle Options → Snippets):
 - A card can now be built from several consecutive subtitle lines (a question and its answer, a sentence split over lines). The texts are joined with a configurable separator (`<br>` by default), the card spans from the first line's start to the last line's end, and every card stays within a configurable maximum length (15 s by default, measured after gap removal).
 - **Rules** grouping mode proposes snippets without any external service: a line joins the previous one when the gap is small (1.5 s by default) and the previous line ends with a cue character (`?？…→、,`) or the speaker changes. **Off** (the default) keeps one card per line, exactly as before.
