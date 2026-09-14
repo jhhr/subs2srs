@@ -59,43 +59,88 @@ namespace subs2srs
 
 
   /// <summary>
-  /// Prices in USD per million tokens for the cost estimate, matched by model-name prefix
-  /// (longest match wins). Unknown models get a token count only. Checked 2026-09-14.
+  /// Standard (non-batch, uncached) prices in USD per million tokens for the cost estimate,
+  /// matched by model-name prefix (longest match wins). Unknown models get a token count only.
   /// </summary>
+  /// <remarks>
+  /// Read from the official pricing pages on 2026-09-14:
+  /// <list type="bullet">
+  /// <item>Anthropic: https://claude.com/pricing#api (display names; the API IDs come from
+  /// https://platform.claude.com/docs/en/about-claude/models/overview). Only models still served on
+  /// the Claude API are listed (Opus 4.1 is retired there). The full 1M context is billed at the
+  /// standard rate, so there is no long-context tier.</item>
+  /// <item>OpenAI: https://developers.openai.com/api/docs/pricing. Legacy models (gpt-3.5-turbo,
+  /// davinci-002, babbage-002) are left out. Where the page has a short/long context split the
+  /// short-context price is used (gpt-5.5 and gpt-5.4 say "&lt;272K"; the threshold for gpt-6-astra
+  /// and the gpt-5.6 family is not stated); a chunk never comes near it.</item>
+  /// <item>Google: https://ai.google.dev/gemini-api/docs/pricing, paid tier, text input. Text chat
+  /// models only (no live, transcribe, translate, image or computer-use variants). Gemini 2.5 Pro
+  /// and 3.1 Pro Preview use the "prompts &lt;= 200k tokens" tier. Gemini 3.6/3.7/3.8 Flash cost
+  /// $0.75 / $3.75 through 2026-12-31 and $1.50 / $7.50 from 2027-01-01.</item>
+  /// </list>
+  /// Batch prices are half of these on all three providers (Gemini also has a Flex tier at the
+  /// same discount); cached input is 10% (Anthropic, Gemini) or about 10% (OpenAI) of the input price.
+  /// </remarks>
   public static class AiPricing
   {
     private static readonly (string prefix, double input, double output)[] Table =
     {
-      ("claude-opus-5", 5, 25),
-      ("claude-sonnet-5", 2, 10),
-      ("claude-haiku-4-5", 1, 5),
+      // Anthropic
+      ("claude-fable-5-1", 10.00, 50.00),
+      ("claude-fable-5", 10.00, 50.00),
+      ("claude-opus-5", 5.00, 25.00),
+      ("claude-opus-4-8", 5.00, 25.00),
+      ("claude-opus-4-7", 5.00, 25.00),
+      ("claude-opus-4-6", 5.00, 25.00),
+      ("claude-opus-4-5", 5.00, 25.00),
+      ("claude-sonnet-5", 2.00, 10.00),
+      ("claude-sonnet-4-6", 3.00, 15.00),
+      ("claude-sonnet-4-5", 3.00, 15.00),
+      ("claude-haiku-4-5", 1.00, 5.00),
+      // OpenAI
       ("gpt-6-astra", 10.00, 50.00),
       ("gpt-5.6-sol", 4.00, 20.00),
       ("gpt-5.6-terra", 2.00, 12.00),
       ("gpt-5.6-luna", 0.20, 1.20),
-      ("gpt-5.6", 4.00, 20.00),
+      ("gpt-5.5-pro", 30.00, 180.00),
       ("gpt-5.5", 5.00, 30.00),
-      ("gpt-5.4-nano", 0.20, 1.25),
+      ("gpt-5.4-pro", 30.00, 180.00),
       ("gpt-5.4-mini", 0.75, 4.50),
+      ("gpt-5.4-nano", 0.20, 1.25),
       ("gpt-5.4", 2.50, 15.00),
+      ("gpt-5.2-pro", 21.00, 168.00),
       ("gpt-5.2", 1.75, 14.00),
       ("gpt-5.1", 1.25, 10.00),
-      ("gpt-5-nano", 0.05, 0.40),
+      ("gpt-5-pro", 15.00, 120.00),
       ("gpt-5-mini", 0.25, 2.00),
+      ("gpt-5-nano", 0.05, 0.40),
       ("gpt-5", 1.25, 10.00),
-      ("gpt-4.1-nano", 0.10, 0.40),
       ("gpt-4.1-mini", 0.40, 1.60),
+      ("gpt-4.1-nano", 0.10, 0.40),
       ("gpt-4.1", 2.00, 8.00),
+      ("gpt-4o-2024-05-13", 5.00, 15.00),
+      ("gpt-4o-mini", 0.15, 0.60),
+      ("gpt-4o", 2.50, 10.00),
+      ("gpt-4-turbo-2024-04-09", 10.00, 30.00),
+      ("gpt-4-0613", 30.00, 60.00),
+      ("o1-pro", 150.00, 600.00),
+      ("o1", 15.00, 60.00),
+      ("o3-pro", 20.00, 80.00),
+      ("o3-mini", 1.10, 4.40),
+      ("o3", 2.00, 8.00),
+      ("o4-mini", 1.10, 4.40),
+      // Google
       ("gemini-3.8-flash", 0.75, 3.75),
       ("gemini-3.7-flash", 0.75, 3.75),
       ("gemini-3.6-flash", 0.75, 3.75),
       ("gemini-3.5-flash-lite", 0.30, 2.50),
       ("gemini-3.5-flash", 1.50, 9.00),
       ("gemini-3.1-flash-lite", 0.25, 1.50),
-      ("gemini-3.1-pro", 2.00, 12.00),
+      ("gemini-3.1-pro-preview", 2.00, 12.00),
+      ("gemini-3-flash-preview", 0.50, 3.00),
+      ("gemini-2.5-pro", 1.25, 10.00),
       ("gemini-2.5-flash-lite", 0.10, 0.40),
       ("gemini-2.5-flash", 0.30, 2.50),
-      ("gemini-2.5-pro", 1.25, 10.00),
     };
 
     public static double? Usd(string model, int inputTokens, int outputTokens)
@@ -104,8 +149,14 @@ namespace subs2srs
       string m = model.Trim().ToLowerInvariant();
       (string prefix, double input, double output)? best = null;
       foreach (var row in Table)
-        if (m.StartsWith(row.prefix, StringComparison.Ordinal) && (best == null || row.prefix.Length > best.Value.prefix.Length))
+      {
+        // The prefix must be the whole ID or be followed by "-" (a dated snapshot or variant), so
+        // "gpt-5.6" is not priced as "gpt-5" and "gemini-3.1-pro" not as anything.
+        bool matches = m.StartsWith(row.prefix, StringComparison.Ordinal)
+          && (m.Length == row.prefix.Length || m[row.prefix.Length] == '-');
+        if (matches && (best == null || row.prefix.Length > best.Value.prefix.Length))
           best = row;
+      }
       if (best == null) return null;
       return inputTokens / 1e6 * best.Value.input + outputTokens / 1e6 * best.Value.output;
     }

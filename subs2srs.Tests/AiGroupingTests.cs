@@ -411,11 +411,24 @@ namespace subs2srs.Tests
     [Fact]
     public void Pricing_LongestPrefixWins()
     {
+      // Official pages, 2026-09-14: a dated snapshot matches its family, the longer prefix wins.
       Assert.Equal(1.25 + 10, AiPricing.Usd("gpt-5-2025-08-07", 1_000_000, 1_000_000)!.Value, 6);
       Assert.Equal(0.2 + 1.2, AiPricing.Usd("gpt-5.6-luna", 1_000_000, 1_000_000)!.Value, 6);
-      Assert.Equal(0.75 + 3.75, AiPricing.Usd("gemini-3.8-flash", 1_000_000, 1_000_000)!.Value, 6);
       Assert.Equal(0.25 + 2, AiPricing.Usd("gpt-5-mini", 1_000_000, 1_000_000)!.Value, 6);
+      Assert.Equal(30 + 180, AiPricing.Usd("gpt-5.5-pro", 1_000_000, 1_000_000)!.Value, 6);
+      Assert.Equal(15 + 60, AiPricing.Usd("o1", 1_000_000, 1_000_000)!.Value, 6);
+      Assert.Equal(1.1 + 4.4, AiPricing.Usd("o3-mini", 1_000_000, 1_000_000)!.Value, 6);
       Assert.Equal(5 + 25, AiPricing.Usd("claude-opus-5", 1_000_000, 1_000_000)!.Value, 6);
+      Assert.Equal(2 + 10, AiPricing.Usd("claude-sonnet-5", 1_000_000, 1_000_000)!.Value, 6);
+      Assert.Equal(3 + 15, AiPricing.Usd("claude-sonnet-4-6", 1_000_000, 1_000_000)!.Value, 6);
+      Assert.Equal(1 + 5, AiPricing.Usd("claude-haiku-4-5-20251001", 1_000_000, 1_000_000)!.Value, 6);
+      Assert.Equal(0.75 + 3.75, AiPricing.Usd("gemini-3.8-flash", 1_000_000, 1_000_000)!.Value, 6);
+      Assert.Equal(2 + 12, AiPricing.Usd("gemini-3.1-pro-preview", 1_000_000, 1_000_000)!.Value, 6);
+      Assert.Equal(0.1 + 0.4, AiPricing.Usd("gemini-2.5-flash-lite", 1_000_000, 1_000_000)!.Value, 6);
+      // Not on the pages (or retired from the API): no estimate rather than a guess.
+      Assert.Null(AiPricing.Usd("gpt-5.6", 1, 1));
+      Assert.Null(AiPricing.Usd("gemini-3.1-pro", 1, 1));
+      Assert.Null(AiPricing.Usd("claude-opus-4-1", 1, 1));
       Assert.Null(AiPricing.Usd("llama", 1, 1));
     }
 
