@@ -36,6 +36,7 @@ namespace subs2srs.Tests.Harness
             {
                 EnableLogging = false,
                 MaxParallelTasks = 1,
+                AiCacheDir = Path.Combine(TempDir, "ai-cache"), // never the real cache
             };
             Settings.Instance.Reset();
 

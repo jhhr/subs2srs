@@ -21,6 +21,8 @@ namespace subs2srs
     public int? Rpm { get; set; }
     /// <summary>Rule grouper used for chunks whose request failed.</summary>
     public RuleGrouperOptions Fallback { get; set; } = new RuleGrouperOptions();
+    /// <summary>Prefix of the progress text ("AI grouping: 3 of 8 chunks").</summary>
+    public string ProgressLabel { get; set; } = "AI grouping";
 
     public static AiGroupingOptions FromSettings(bool forceRefresh = false)
     {
@@ -172,7 +174,7 @@ namespace subs2srs
         string user = AiGroupingPrompt.BuildUser(lines, kept, chunk, hasSubs2);
         ChatCompletion completion = await provider.CompleteJsonAsync(system, user, AiGroupingPrompt.Schema, token).ConfigureAwait(false);
         return (completion, AiAnswerParser.Parse(completion.Text, chunk));
-      }, progress, "AI grouping", ct).ConfigureAwait(false);
+      }, progress, options.ProgressLabel, ct).ConfigureAwait(false);
 
       // Every request failed: the caller wants the real error (bad key, wrong model), not a silent rules grouping.
       if (Array.TrueForAll(outcomes, o => !o.Ok))

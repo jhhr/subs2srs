@@ -1009,8 +1009,9 @@ namespace subs2srs
 
 
     /// <summary>
-    /// Produce a full-index join vector for one episode according to the grouping mode.
-    /// AI mode falls back to the rules until a model is configured.
+    /// Produce a full-index join vector for one episode according to the grouping mode, without
+    /// calling a model: in AI mode this is the fallback (the AI pass runs in the preview or, with
+    /// the AiGroupingOnGo preference, in <see cref="runAiGrouping"/> before this is reached).
     /// </summary>
     public static bool[] computeJoins(List<InfoCombined> lines, SnippetMode mode, SnippetLimits limits, RuleGrouperOptions ruleOptions)
     {
@@ -1020,7 +1021,8 @@ namespace subs2srs
           return RuleBasedGrouper.GroupEpisode(lines, limits, ruleOptions);
 
         case SnippetMode.AI:
-          Logger.Instance.info("Snippet grouping: AI mode is not available yet, using the rule-based grouper.");
+          Logger.Instance.info("Snippet grouping: no AI grouping available for this episode "
+            + "(run it from the Preview, or turn on the AI Grouping On Go preference); using the rule-based grouper.");
           return RuleBasedGrouper.GroupEpisode(lines, limits, ruleOptions);
 
         default:
@@ -1029,10 +1031,65 @@ namespace subs2srs
     }
 
 
+    /// <summary>True when the pipeline itself must run the AI pass: mode AI, no grouping from the preview, AiGroupingOnGo on.</summary>
+    public static bool aiGroupingOnGoApplies(WorkerVars workerVars)
+    {
+      if (Settings.Instance.Snippets.Mode != SnippetMode.AI || !ConstantSettings.AiGroupingOnGo) return false;
+      if (workerVars.CombinedAll == null) return true;
+      return workerVars.Joins == null || workerVars.Joins.Count != workerVars.CombinedAll.Count;
+    }
+
+
+    /// <summary>
+    /// The "AI grouping" pipeline step: ask the model for every episode that has no grouping yet
+    /// and store the result in <see cref="WorkerVars.Joins"/> (plus the proposal for validation
+    /// export). A provider failure is logged and leaves the episode to the rules in
+    /// <see cref="groupIntoSnippets"/>. Cancel is honoured through the reporter.
+    /// </summary>
+    public List<List<InfoCombined>> runAiGrouping(WorkerVars workerVars, IProgressReporter dialogProgress)
+    {
+      SnippetLimits limits = SnippetLimits.FromSettings();
+      int totalEpisodes = workerVars.CombinedAll.Count;
+      if (workerVars.Joins == null || workerVars.Joins.Count != totalEpisodes)
+        workerVars.Joins = new List<bool[]>(new bool[totalEpisodes][]);
+      workerVars.ProposedJoins ??= new List<bool[]>(new bool[totalEpisodes][]);
+      if (workerVars.ProposedJoins.Count != totalEpisodes)
+        workerVars.ProposedJoins = new List<bool[]>(new bool[totalEpisodes][]);
+
+      for (int epIdx = 0; epIdx < totalEpisodes; epIdx++)
+      {
+        List<InfoCombined> lines = workerVars.CombinedAll[epIdx];
+        if (workerVars.Joins[epIdx] != null && workerVars.Joins[epIdx].Length == lines.Count) continue;
+
+        AiGroupingOptions options = AiGroupingOptions.FromSettings();
+        options.ProgressLabel = totalEpisodes == 1 ? "AI grouping" : $"AI grouping (episode {epIdx + 1} of {totalEpisodes})";
+        try
+        {
+          AiGroupingResult result = AiGrouper.Group(lines, limits, options, dialogProgress, dialogProgress.Token);
+          bool[] joins = AiGrouper.ApplyToLines(result, lines);
+          workerVars.Joins[epIdx] = joins;
+          workerVars.ProposedJoins[epIdx] = (bool[])joins.Clone();
+          workerVars.ProposalProducer = "ai";
+          workerVars.ProposalModel = result.Model;
+          workerVars.ProposalPromptVersion = result.PromptVersion;
+        }
+        catch (ProviderException ex)
+        {
+          Logger.Instance.info($"AI grouping (episode {epIdx + Settings.Instance.EpisodeStartNumber}) failed, the rule-based grouper will be used: {ex.Message}");
+        }
+
+        if (dialogProgress.Cancel) return null;
+      }
+      return workerVars.CombinedAll;
+    }
+
+
     private static string describeSnippet(IReadOnlyList<InfoCombined> lines, int first, int last, SnippetLimits limits)
     {
       int ms = SnippetGrouping.TrimmedDurationMs(lines, first, last, limits);
-      return FormattableString.Invariant($"{last - first + 1} lines, {ms / 1000.0:0.0} s");
+      string text = FormattableString.Invariant($"{last - first + 1} lines, {ms / 1000.0:0.0} s");
+      string aiNote = lines[first].GroupNote;
+      return string.IsNullOrEmpty(aiNote) ? text : text + ": " + aiNote;
     }
 
 

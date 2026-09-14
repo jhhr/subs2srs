@@ -54,6 +54,9 @@ namespace subs2srs
 
     /// <summary>Who produced <see cref="ProposedJoins"/> ("rules", "ai"), for the validation export.</summary>
     public string ProposalProducer { get; set; }
+    /// <summary>Model and prompt version behind an "ai" proposal, for the validation file.</summary>
+    public string ProposalModel { get; set; }
+    public int? ProposalPromptVersion { get; set; }
 
     /// <summary>
     /// The media directory.

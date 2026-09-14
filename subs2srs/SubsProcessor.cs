@@ -55,7 +55,7 @@ namespace subs2srs
                 WorkerVars.SubsProcessingType.Normal);
             workerVars.Joins = joins;
             this.currentStep = 0;
-            dialogProgress.StepsTotal = determineNumSteps(combinedAll);
+            dialogProgress.StepsTotal = determineNumSteps(workerVars);
             this.workerStartTime = DateTime.Now;
         
             try
@@ -103,6 +103,15 @@ namespace subs2srs
 
                 dialogProgress.NextStep(++currentStep, "Inactivate lines");
                 combinedAll = subsWorker.inactivateLines(workerVars, dialogProgress);
+
+                if (combinedAll != null) workerVars.CombinedAll = combinedAll;
+                else throw new OperationCanceledException();
+            }
+
+            if (WorkerSubs.aiGroupingOnGoApplies(workerVars))
+            {
+                dialogProgress.NextStep(++currentStep, "AI grouping");
+                combinedAll = subsWorker.runAiGrouping(workerVars, dialogProgress);
 
                 if (combinedAll != null) workerVars.CombinedAll = combinedAll;
                 else throw new OperationCanceledException();
@@ -242,9 +251,10 @@ namespace subs2srs
             return srsFormat;
         }
 
-        private int determineNumSteps(List<List<InfoCombined>> combinedAll)
+        private int determineNumSteps(WorkerVars workerVars)
         {
-            int numSteps = combinedAll == null ? 5 : 3;
+            int numSteps = workerVars.CombinedAll == null ? 5 : 3;
+            if (WorkerSubs.aiGroupingOnGoApplies(workerVars)) numSteps++;
             if ((Settings.Instance.ContextLeadingCount > 0) || (Settings.Instance.ContextTrailingCount > 0)) numSteps++;
             if (Settings.Instance.AudioClips.Enabled) numSteps++;
             if (Settings.Instance.Snapshots.Enabled) numSteps++;
