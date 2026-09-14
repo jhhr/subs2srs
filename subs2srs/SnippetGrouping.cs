@@ -53,10 +53,8 @@ namespace subs2srs
     public static SnippetLimits FromSettings()
     {
       var s = Settings.Instance.Snippets;
-      int pad = 0;
-      if (Settings.Instance.AudioClips.Enabled && Settings.Instance.AudioClips.PadEnabled)
-        pad = Settings.Instance.AudioClips.PadStart + Settings.Instance.AudioClips.PadEnd;
-      return new SnippetLimits(Math.Max(1, s.MaxSnippetSeconds) * 1000, Math.Max(0, s.GapKeepMs), pad);
+      var (padStart, padEnd) = SnippetMedia.GroupedCardPadMs();
+      return new SnippetLimits(Math.Max(1, s.MaxSnippetSeconds) * 1000, Math.Max(0, s.GapKeepMs), padStart + padEnd);
     }
   }
 

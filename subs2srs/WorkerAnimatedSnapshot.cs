@@ -59,8 +59,7 @@ namespace subs2srs
         MaxDegreeOfParallelism = ConstantSettings.EffectiveParallelism
       };
 
-      bool gapRemoval = Settings.Instance.Snippets.GapRemovalEnabled;
-      int gapKeepMs = Math.Max(0, Settings.Instance.Snippets.GapKeepMs);
+      CardCutOptions cut = CardCutOptions.FromSettings();
 
       // For each episode
       foreach (List<InfoCombined> combArray in workerVars.CombinedAll)
@@ -99,14 +98,18 @@ namespace subs2srs
           {
             string tmpFile = Path.ChangeExtension(outFile, ".tmp" + extension);
 
-            // Multi-part card with dead-space removal: keep only the parts (and a short gap between them).
-            List<TimeRange> ranges = null;
-            List<TimeRange> segments = gapRemoval ? comb.Segments() : null;
-            if (segments != null && segments.Count > 1)
+            // Grouped card: the range list shared with the audio and video clips (no pad
+            // of its own for plain lines). A single range needs no select filter.
+            List<TimeRange> ranges = SnippetMedia.RangesFor(comb, cut, 0, 0);
+            if (ranges != null && ranges.Count > 0)
             {
-              ranges = SnippetGrouping.TrimmedRanges(segments, gapKeepMs, 0, 0);
               startTime = ranges[0].Start;
               endTime = ranges[ranges.Count - 1].End;
+              if (ranges.Count == 1) ranges = null;
+            }
+            else
+            {
+              ranges = null;
             }
 
             UtilsAnimatedSnapshot.Encode(videoFileName, startTime, endTime, ranges, settings, encoder, tmpFile);

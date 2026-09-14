@@ -1611,24 +1611,26 @@ namespace subs2srs
         // ── AUDIO PREVIEW ───────────────────────────────────────────────────
 
         /// <summary>
-        /// The media ranges the selected line's card would be cut from: the whole
-        /// snippet with dead space removed when the line is grouped (and gap
-        /// removal is on), otherwise the line itself. Pads applied at the edges.
+        /// The media ranges the selected line's card would be cut from: the shared
+        /// range list of the snippet when the line is grouped (kept lines only,
+        /// omitted lines cut away, gaps shortened when gap removal is on),
+        /// otherwise the line itself. Pads applied at the edges.
         /// </summary>
         private List<TimeRange> RangesForAudioPreview(int idx, InfoCombined comb)
         {
             int padStart = Settings.Instance.AudioClips.PadEnabled ? Settings.Instance.AudioClips.PadStart : 0;
             int padEnd = Settings.Instance.AudioClips.PadEnabled ? Settings.Instance.AudioClips.PadEnd : 0;
+            CardCutOptions cut = CardCutOptions.FromSettings();
 
-            if (Settings.Instance.Snippets.GapRemovalEnabled && _editor != null)
+            var range = _editor?.SnippetRangeOf(idx);
+            if (range != null && range.Value.first != range.Value.last)
             {
-                var range = _editor.SnippetRangeOf(idx);
-                List<TimeRange> segments = range != null
-                    ? SnippetGrouping.SegmentsOf(_editor.Lines, range.Value.first, range.Value.last)
-                    : comb.Segments();
-                if (segments.Count > 1)
-                    return SnippetGrouping.TrimmedRanges(segments, Math.Max(0, Settings.Instance.Snippets.GapKeepMs), padStart, padEnd);
+                var ranges = SnippetMedia.RangesFor(_editor.Lines, range.Value.first, range.Value.last, cut);
+                if (ranges.Count > 0) return ranges;
             }
+
+            var plain = SnippetMedia.RangesFor(comb, cut, padStart, padEnd);
+            if (plain != null && plain.Count > 0) return plain;
 
             return new List<TimeRange>
             {

@@ -67,12 +67,13 @@ namespace subs2srs
         TimeSpan entireClipStartTime = combArray[0].Subs1.StartTime;
         TimeSpan entireClipEndTime = combArray[combArray.Count - 1].Subs1.EndTime;
 
-        // Apply pad to entire clip timings (if requested)
-        if (Settings.Instance.VideoClips.PadEnabled)
-        {
-          entireClipStartTime = UtilsSubs.applyTimePad(entireClipStartTime, -Settings.Instance.VideoClips.PadStart);
-          entireClipEndTime = UtilsSubs.applyTimePad(entireClipEndTime, Settings.Instance.VideoClips.PadEnd);
-        }
+        // Apply pad to entire clip timings (if requested). Grouped cards are cut with
+        // the shared (audio-clip) pad, so the episode clip must cover that too.
+        var (groupedPadStart, groupedPadEnd) = SnippetMedia.GroupedCardPadMs();
+        int episodePadStart = Math.Max(Settings.Instance.VideoClips.PadEnabled ? Settings.Instance.VideoClips.PadStart : 0, groupedPadStart);
+        int episodePadEnd = Math.Max(Settings.Instance.VideoClips.PadEnabled ? Settings.Instance.VideoClips.PadEnd : 0, groupedPadEnd);
+        entireClipStartTime = UtilsSubs.applyTimePad(entireClipStartTime, -episodePadStart);
+        entireClipEndTime = UtilsSubs.applyTimePad(entireClipEndTime, episodePadEnd);
 
         // Skip entire episode (including expensive video conversion) if all clips already exist
         if (checkAllVideoClipsExist(combArray, name, episodeCount, progressCount, workerVars.MediaDir, videoExtension))
@@ -118,8 +119,7 @@ namespace subs2srs
 
         int epNum = episodeCount; // capture for lambda
         int baseCount = progressCount;
-        bool gapRemoval = Settings.Instance.Snippets.GapRemovalEnabled;
-        int gapKeepMs = Math.Max(0, Settings.Instance.Snippets.GapKeepMs);
+        CardCutOptions cut = CardCutOptions.FromSettings();
         int padStartMs = Settings.Instance.VideoClips.PadEnabled ? Settings.Instance.VideoClips.PadStart : 0;
         int padEndMs = Settings.Instance.VideoClips.PadEnabled ? Settings.Instance.VideoClips.PadEnd : 0;
 
@@ -162,14 +162,14 @@ namespace subs2srs
             string ext = Path.GetExtension(outFile);
             string tmpFile = Path.ChangeExtension(outFile, ".tmp" + ext);
 
-            // Multi-part card with dead-space removal: stream-copy each part and concatenate.
-            List<TimeRange> segments = gapRemoval ? item.comb.Segments() : null;
+            // Grouped card: the range list shared with the audio clip and the animated
+            // snapshot; each range is stream-copied and the pieces concatenated, so the
+            // cuts land on keyframes and only approximate the audio.
+            List<TimeRange> ranges = SnippetMedia.RangesFor(item.comb, cut, padStartMs, padEndMs);
 
-            if (segments != null && segments.Count > 1)
+            if (ranges != null && ranges.Count > 0)
             {
-              List<TimeRange> ranges = UtilsGapRemoval.Relative(
-                SnippetGrouping.TrimmedRanges(segments, gapKeepMs, padStartMs, padEndMs), entireClipStartTime);
-              UtilsVideo.cutVideoSegments(tempVideoFilename, ranges, tmpFile);
+              UtilsVideo.cutVideoSegments(tempVideoFilename, UtilsGapRemoval.Relative(ranges, entireClipStartTime), tmpFile);
             }
             else
             {
