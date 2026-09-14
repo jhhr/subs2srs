@@ -122,6 +122,21 @@ namespace subs2srs
     public const string GroupingKeyAttachAbove = "<Control>Up w";
     public const string GroupingKeyAttachBelow = "<Control>Down s";
     public const string GroupingKeyDetach = "<Control>BackSpace x";
+
+    // ── AI grouping ──
+    // API keys live in preferences.json; the environment variables ANTHROPIC_API_KEY,
+    // OPENAI_API_KEY and GEMINI_API_KEY override them. Keys are never logged.
+    public const string AnthropicApiKey = "";
+    public const string OpenAiApiKey = "";
+    public const string GeminiApiKey = "";
+    public const int AnthropicRpm = 50;
+    public const int AnthropicConcurrency = 4;
+    public const int OpenAiRpm = 60;
+    public const int OpenAiConcurrency = 4;
+    public const int GeminiRpm = 15;
+    public const int GeminiConcurrency = 2;
+    public const string AiCacheDir = ""; // "" = <LocalApplicationData>/subs2srs/ai-cache
+    public const bool AiGroupingOnGo = false;
   }
 
 
@@ -823,6 +838,81 @@ namespace subs2srs
         get => Prefs.GroupingKeyDetach ?? "";
         set => Prefs.GroupingKeyDetach = value ?? "";
     }
+
+    // ── AI grouping (keys are secrets: never log them) ──
+
+    public static string AnthropicApiKey
+    {
+        get => Prefs.AnthropicApiKey ?? "";
+        set => Prefs.AnthropicApiKey = value ?? "";
+    }
+
+    public static string OpenAiApiKey
+    {
+        get => Prefs.OpenAiApiKey ?? "";
+        set => Prefs.OpenAiApiKey = value ?? "";
+    }
+
+    public static string GeminiApiKey
+    {
+        get => Prefs.GeminiApiKey ?? "";
+        set => Prefs.GeminiApiKey = value ?? "";
+    }
+
+    public static int AnthropicRpm
+    {
+        get => Prefs.AnthropicRpm;
+        set => Prefs.AnthropicRpm = value;
+    }
+
+    public static int AnthropicConcurrency
+    {
+        get => Prefs.AnthropicConcurrency;
+        set => Prefs.AnthropicConcurrency = value;
+    }
+
+    public static int OpenAiRpm
+    {
+        get => Prefs.OpenAiRpm;
+        set => Prefs.OpenAiRpm = value;
+    }
+
+    public static int OpenAiConcurrency
+    {
+        get => Prefs.OpenAiConcurrency;
+        set => Prefs.OpenAiConcurrency = value;
+    }
+
+    public static int GeminiRpm
+    {
+        get => Prefs.GeminiRpm;
+        set => Prefs.GeminiRpm = value;
+    }
+
+    public static int GeminiConcurrency
+    {
+        get => Prefs.GeminiConcurrency;
+        set => Prefs.GeminiConcurrency = value;
+    }
+
+    /// <summary>Where AI grouping answers are cached. Empty = &lt;LocalApplicationData&gt;/subs2srs/ai-cache.</summary>
+    public static string AiCacheDir
+    {
+        get => Prefs.AiCacheDir ?? "";
+        set => Prefs.AiCacheDir = value ?? "";
+    }
+
+    /// <summary>Resolved cache directory.</summary>
+    public static string AiCacheDirFull => string.IsNullOrWhiteSpace(AiCacheDir)
+        ? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "subs2srs", "ai-cache")
+        : AiCacheDir;
+
+    /// <summary>When true, Go runs the AI grouping pass itself if the preview has not produced a grouping.</summary>
+    public static bool AiGroupingOnGo
+    {
+        get => Prefs.AiGroupingOnGo;
+        set => Prefs.AiGroupingOnGo = value;
+    }
   }
 
   /// <summary>
@@ -1062,7 +1152,7 @@ namespace subs2srs
     Off,
     /// <summary>Deterministic grouper: small gaps plus a cue (question mark, speaker change, ...).</summary>
     Rules,
-    /// <summary>Language model decides; falls back to Rules when no model is configured.</summary>
+    /// <summary>Language model decides (AI grouper); the rules are the fallback for failed requests.</summary>
     AI
   }
 
@@ -1091,6 +1181,17 @@ namespace subs2srs
     public bool RulesRequireCue { get; set; } = true;
     public string RulesCueChars { get; set; } = "?？…→、,";
     public bool RulesJoinOnActorChange { get; set; } = true;
+
+    // ── AI grouper (Mode = AI) ──
+
+    /// <summary>Model ID; the prefix picks the provider (claude…, gpt…/o1…/o3…/o4…, gemini…).</summary>
+    public string AiModel { get; set; } = "claude-sonnet-5";
+
+    /// <summary>Target lines per request; chunks split at gaps of at least MaxSnippetSeconds. 0 = whole episode.</summary>
+    public int ChunkTargetLines { get; set; } = 200;
+
+    /// <summary>Free text appended to the system prompt, e.g. "the show is a workplace comedy".</summary>
+    public string AiExtraInstructions { get; set; } = "";
   }
 
 

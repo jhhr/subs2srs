@@ -1,0 +1,19 @@
+{
+  "id": "msg_0198U2o9gW7qb4fJ5z9k2m1N",
+  "type": "message",
+  "role": "assistant",
+  "content": [
+    {
+      "type": "text",
+      "text": "{\"snippets\":[{\"first\":0,\"last\":1,\"note\":\"answer to 0\"}]}"
+    }
+  ],
+  "model": "claude-sonnet-5",
+  "stop_reason": "end_turn",
+  "stop_sequence": null,
+  "usage": {
+    "input_tokens": 73,
+    "output_tokens": 27,
+    "cache_read_input_tokens": 10
+  }
+}

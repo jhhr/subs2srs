@@ -1,0 +1,25 @@
+{
+  "candidates": [
+    {
+      "content": {
+        "parts": [
+          {
+            "text": "{\"snippets\":[{\"first\":0,\"last\":1,\"note\":\"answer to 0\"}]}"
+          }
+        ],
+        "role": "model"
+      },
+      "finishReason": "STOP",
+      "index": 0
+    }
+  ],
+  "usageMetadata": {
+    "promptTokenCount": 150,
+    "candidatesTokenCount": 30,
+    "totalTokenCount": 250,
+    "thoughtsTokenCount": 70,
+    "promptTokensDetails": [ { "modality": "TEXT", "tokenCount": 150 } ]
+  },
+  "modelVersion": "gemini-2.5-flash",
+  "responseId": "abc123"
+}

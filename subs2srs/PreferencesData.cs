@@ -163,5 +163,18 @@ namespace subs2srs
         public string GroupingKeyAttachAbove { get; set; } = PrefDefaults.GroupingKeyAttachAbove;
         public string GroupingKeyAttachBelow { get; set; } = PrefDefaults.GroupingKeyAttachBelow;
         public string GroupingKeyDetach { get; set; } = PrefDefaults.GroupingKeyDetach;
+
+        // ── AI grouping ──────────────────────────────────────────────────────
+        public string AnthropicApiKey { get; set; } = PrefDefaults.AnthropicApiKey;
+        public string OpenAiApiKey { get; set; } = PrefDefaults.OpenAiApiKey;
+        public string GeminiApiKey { get; set; } = PrefDefaults.GeminiApiKey;
+        public int AnthropicRpm { get; set; } = PrefDefaults.AnthropicRpm;
+        public int AnthropicConcurrency { get; set; } = PrefDefaults.AnthropicConcurrency;
+        public int OpenAiRpm { get; set; } = PrefDefaults.OpenAiRpm;
+        public int OpenAiConcurrency { get; set; } = PrefDefaults.OpenAiConcurrency;
+        public int GeminiRpm { get; set; } = PrefDefaults.GeminiRpm;
+        public int GeminiConcurrency { get; set; } = PrefDefaults.GeminiConcurrency;
+        public string AiCacheDir { get; set; } = PrefDefaults.AiCacheDir;
+        public bool AiGroupingOnGo { get; set; } = PrefDefaults.AiGroupingOnGo;
     }
 }

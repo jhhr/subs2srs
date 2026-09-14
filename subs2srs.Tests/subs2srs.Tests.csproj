@@ -19,4 +19,8 @@
   <ItemGroup>
     <ProjectReference Include="../subs2srs/subs2srs.csproj" />
   </ItemGroup>
+
+  <ItemGroup>
+    <None Include="Fixtures/**/*.json" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
 </Project>

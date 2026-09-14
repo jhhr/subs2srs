@@ -312,6 +312,17 @@ namespace subs2srs
       var(new { ConstantSettings.GroupingKeyAttachAbove });
       var(new { ConstantSettings.GroupingKeyAttachBelow });
       var(new { ConstantSettings.GroupingKeyDetach });
+      var(new { AnthropicApiKeySet = ConstantSettings.AnthropicApiKey != "" });
+      var(new { OpenAiApiKeySet = ConstantSettings.OpenAiApiKey != "" });
+      var(new { GeminiApiKeySet = ConstantSettings.GeminiApiKey != "" });
+      var(new { ConstantSettings.AnthropicRpm });
+      var(new { ConstantSettings.AnthropicConcurrency });
+      var(new { ConstantSettings.OpenAiRpm });
+      var(new { ConstantSettings.OpenAiConcurrency });
+      var(new { ConstantSettings.GeminiRpm });
+      var(new { ConstantSettings.GeminiConcurrency });
+      var(new { ConstantSettings.AiCacheDir });
+      var(new { ConstantSettings.AiGroupingOnGo });
       var(new { ConstantSettings.ExeFFmpeg });
       var(new { ConstantSettings.PathFFmpegExe });
       var(new { ConstantSettings.PathFFmpegFullExe });

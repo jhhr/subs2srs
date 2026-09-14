@@ -796,6 +796,66 @@ namespace subs2srs
                 + "GTK accelerator names separated by spaces, e.g. \"<Control>BackSpace x\".",
                 PrefDefaults.GroupingKeyDetach));
             propTable["Key: Detach"] = ConstantSettings.GroupingKeyDetach;
+
+            // ── AI ──
+            propTable.Properties.Add(new PropertySpec("Anthropic API Key", typeof(string),
+                "AI",
+                "API key for Claude models (model names starting with \"claude\").\n\n"
+                + "Stored in preferences.json as plain text. The ANTHROPIC_API_KEY environment variable overrides it.",
+                PrefDefaults.AnthropicApiKey));
+            propTable["Anthropic API Key"] = ConstantSettings.AnthropicApiKey;
+
+            propTable.Properties.Add(new PropertySpec("OpenAI API Key", typeof(string),
+                "AI",
+                "API key for OpenAI models (model names starting with \"gpt\", \"o1\", \"o3\" or \"o4\").\n\n"
+                + "Stored in preferences.json as plain text. The OPENAI_API_KEY environment variable overrides it.",
+                PrefDefaults.OpenAiApiKey));
+            propTable["OpenAI API Key"] = ConstantSettings.OpenAiApiKey;
+
+            propTable.Properties.Add(new PropertySpec("Gemini API Key", typeof(string),
+                "AI",
+                "API key for Google Gemini models (model names starting with \"gemini\").\n\n"
+                + "Stored in preferences.json as plain text. The GEMINI_API_KEY environment variable overrides it.",
+                PrefDefaults.GeminiApiKey));
+            propTable["Gemini API Key"] = ConstantSettings.GeminiApiKey;
+
+            propTable.Properties.Add(new PropertySpec("Anthropic Requests Per Minute", typeof(int),
+                "AI", "Upper bound on request starts per minute for Claude models.", PrefDefaults.AnthropicRpm));
+            propTable["Anthropic Requests Per Minute"] = ConstantSettings.AnthropicRpm;
+
+            propTable.Properties.Add(new PropertySpec("Anthropic Concurrency", typeof(int),
+                "AI", "Requests in flight at once for Claude models.", PrefDefaults.AnthropicConcurrency));
+            propTable["Anthropic Concurrency"] = ConstantSettings.AnthropicConcurrency;
+
+            propTable.Properties.Add(new PropertySpec("OpenAI Requests Per Minute", typeof(int),
+                "AI", "Upper bound on request starts per minute for OpenAI models.", PrefDefaults.OpenAiRpm));
+            propTable["OpenAI Requests Per Minute"] = ConstantSettings.OpenAiRpm;
+
+            propTable.Properties.Add(new PropertySpec("OpenAI Concurrency", typeof(int),
+                "AI", "Requests in flight at once for OpenAI models.", PrefDefaults.OpenAiConcurrency));
+            propTable["OpenAI Concurrency"] = ConstantSettings.OpenAiConcurrency;
+
+            propTable.Properties.Add(new PropertySpec("Gemini Requests Per Minute", typeof(int),
+                "AI", "Upper bound on request starts per minute for Gemini models.", PrefDefaults.GeminiRpm));
+            propTable["Gemini Requests Per Minute"] = ConstantSettings.GeminiRpm;
+
+            propTable.Properties.Add(new PropertySpec("Gemini Concurrency", typeof(int),
+                "AI", "Requests in flight at once for Gemini models.", PrefDefaults.GeminiConcurrency));
+            propTable["Gemini Concurrency"] = ConstantSettings.GeminiConcurrency;
+
+            propTable.Properties.Add(new PropertySpec("AI Cache Directory", typeof(string),
+                "AI",
+                "Where AI grouping answers are cached so that Preview -> Go and re-runs with unchanged inputs cost nothing.\n\n"
+                + "Leave empty to use the application data directory.",
+                PrefDefaults.AiCacheDir));
+            propTable["AI Cache Directory"] = ConstantSettings.AiCacheDir;
+
+            propTable.Properties.Add(new PropertySpec("AI Grouping On Go", typeof(bool),
+                "AI",
+                "When the snippet mode is AI and Go is pressed without a grouping from the Preview, run the AI pass during Go.\n\n"
+                + "Off: Go falls back to the rule-based grouper and says so in the log.",
+                PrefDefaults.AiGroupingOnGo));
+            propTable["AI Grouping On Go"] = ConstantSettings.AiGroupingOnGo;
         }
 
         // ── GTK UI ──────────────────────────────────────────────────────────
@@ -1368,6 +1428,24 @@ namespace subs2srs
             ConstantSettings.GroupingKeyAttachAbove = getStr("Key: Attach Above");
             ConstantSettings.GroupingKeyAttachBelow = getStr("Key: Attach Below");
             ConstantSettings.GroupingKeyDetach = getStr("Key: Detach");
+
+            ConstantSettings.AnthropicApiKey = getStr("Anthropic API Key").Trim();
+            ConstantSettings.OpenAiApiKey = getStr("OpenAI API Key").Trim();
+            ConstantSettings.GeminiApiKey = getStr("Gemini API Key").Trim();
+            ConstantSettings.AnthropicRpm =
+                UtilsCommon.checkRange((int)propTable["Anthropic Requests Per Minute"], 1, 100000, PrefDefaults.AnthropicRpm);
+            ConstantSettings.AnthropicConcurrency =
+                UtilsCommon.checkRange((int)propTable["Anthropic Concurrency"], 1, 64, PrefDefaults.AnthropicConcurrency);
+            ConstantSettings.OpenAiRpm =
+                UtilsCommon.checkRange((int)propTable["OpenAI Requests Per Minute"], 1, 100000, PrefDefaults.OpenAiRpm);
+            ConstantSettings.OpenAiConcurrency =
+                UtilsCommon.checkRange((int)propTable["OpenAI Concurrency"], 1, 64, PrefDefaults.OpenAiConcurrency);
+            ConstantSettings.GeminiRpm =
+                UtilsCommon.checkRange((int)propTable["Gemini Requests Per Minute"], 1, 100000, PrefDefaults.GeminiRpm);
+            ConstantSettings.GeminiConcurrency =
+                UtilsCommon.checkRange((int)propTable["Gemini Concurrency"], 1, 64, PrefDefaults.GeminiConcurrency);
+            ConstantSettings.AiCacheDir = getStr("AI Cache Directory").Trim();
+            ConstantSettings.AiGroupingOnGo = (bool)propTable["AI Grouping On Go"];
 
             PrefIO.Write();
         }
