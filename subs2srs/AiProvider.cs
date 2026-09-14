@@ -144,6 +144,9 @@ namespace subs2srs
     /// </summary>
     protected virtual string? Degrade(int status, string providerMessage, ISet<string> alreadyDropped) => null;
 
+    /// <summary>Whether a failed status is worth another attempt; a provider may veto (e.g. a spent quota behind a 429).</summary>
+    protected virtual bool IsRetryable(int status, string body) => RetryPolicy.IsRetryableStatus(status);
+
     /// <summary>Error text from a provider error body; all three put it under <c>error.message</c>.</summary>
     protected virtual string ExtractErrorMessage(string body)
     {
@@ -214,7 +217,7 @@ namespace subs2srs
 
           message = ExtractErrorMessage(body);
           retryAfter = ParseRetryAfter(response.Headers);
-          retryable = RetryPolicy.IsRetryableStatus(status.Value);
+          retryable = IsRetryable(status.Value, body);
           if (!retryable)
           {
             string? drop = Degrade(status.Value, message, dropped);

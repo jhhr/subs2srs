@@ -8,10 +8,14 @@ namespace subs2srs
 {
   /// <summary>
   /// Google Gemini <c>generateContent</c> with <c>responseMimeType: application/json</c> and
-  /// <c>responseSchema</c>. The key goes in the <c>x-goog-api-key</c> header, never the URL, so it
-  /// cannot leak into logs. Gemini's schema dialect is an OpenAPI subset that rejects
-  /// <c>additionalProperties</c>, so the shared schema is cleaned on a copy exactly like
-  /// <c>clean_response_schema_for_gemini</c> in the Python reference.
+  /// <c>responseJsonSchema</c>. The key goes in the <c>x-goog-api-key</c> header, never the URL, so
+  /// it cannot leak into logs. Verified against the official docs on 2026-09-14: the OpenAPI-subset
+  /// <c>responseSchema</c> is deprecated and <c>responseJsonSchema</c> takes real JSON Schema
+  /// including <c>additionalProperties</c>, so the shared schema is sent as is. The legacy field
+  /// (with the <c>additionalProperties</c> cleanup from <c>clean_response_schema_for_gemini</c> in
+  /// the Python reference) stays available behind <see cref="UseLegacyResponseSchema"/>. Thinking is
+  /// left at the model default because the knobs differ by generation (2.5: <c>thinkingBudget</c>,
+  /// 3.x: <c>thinkingLevel</c>); <c>maxOutputTokens</c> covers thoughts and output together.
   /// </summary>
   public sealed class GeminiProvider : HttpChatProvider
   {
@@ -20,8 +24,10 @@ namespace subs2srs
     public string BaseUrl { get; init; } = DefaultBaseUrl;
     /// <summary>Covers thinking and output tokens together.</summary>
     public int MaxOutputTokens { get; init; } = 16384;
-    /// <summary>Thinking budget in tokens; null sends nothing (the model's default). Dropped after a 400 that names it.</summary>
-    public int? ThinkingBudget { get; init; } = 2048;
+    /// <summary>Thinking budget in tokens for 2.5-series models; null (default) sends nothing. Dropped after a 400 that names it.</summary>
+    public int? ThinkingBudget { get; init; }
+    /// <summary>Send the deprecated OpenAPI-subset <c>responseSchema</c> (cleaned) instead of <c>responseJsonSchema</c>.</summary>
+    public bool UseLegacyResponseSchema { get; init; }
 
     public override string Name => ChatProviders.Gemini;
 
@@ -33,9 +39,10 @@ namespace subs2srs
       var generationConfig = new Dictionary<string, object>
       {
         ["responseMimeType"] = "application/json",
-        ["responseSchema"] = CleanSchema(schema),
         ["maxOutputTokens"] = MaxOutputTokens,
       };
+      if (UseLegacyResponseSchema) generationConfig["responseSchema"] = CleanSchema(schema);
+      else generationConfig["responseJsonSchema"] = schema;
       if (ThinkingBudget.HasValue && !droppedOptions.Contains("thinkingConfig"))
         generationConfig["thinkingConfig"] = new Dictionary<string, object> { ["thinkingBudget"] = ThinkingBudget.Value };
 

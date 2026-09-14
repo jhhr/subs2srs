@@ -412,6 +412,8 @@ namespace subs2srs.Tests
     public void Pricing_LongestPrefixWins()
     {
       Assert.Equal(1.25 + 10, AiPricing.Usd("gpt-5-2025-08-07", 1_000_000, 1_000_000)!.Value, 6);
+      Assert.Equal(0.2 + 1.2, AiPricing.Usd("gpt-5.6-luna", 1_000_000, 1_000_000)!.Value, 6);
+      Assert.Equal(0.75 + 3.75, AiPricing.Usd("gemini-3.8-flash", 1_000_000, 1_000_000)!.Value, 6);
       Assert.Equal(0.25 + 2, AiPricing.Usd("gpt-5-mini", 1_000_000, 1_000_000)!.Value, 6);
       Assert.Equal(5 + 25, AiPricing.Usd("claude-opus-5", 1_000_000, 1_000_000)!.Value, 6);
       Assert.Null(AiPricing.Usd("llama", 1, 1));

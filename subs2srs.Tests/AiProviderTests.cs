@@ -352,14 +352,16 @@ namespace subs2srs.Tests
       Assert.Equal(GeminiProvider.DefaultBaseUrl + "gemini-2.5-flash:generateContent", url);
       Assert.DoesNotContain("secret-key", url);
       Assert.Equal("secret-key", headers["x-goog-api-key"]);
-      Assert.DoesNotContain("additionalProperties", body);
       using JsonDocument doc = JsonDocument.Parse(body);
       JsonElement root = doc.RootElement;
       Assert.Equal("SYS", root.GetProperty("system_instruction").GetProperty("parts")[0].GetProperty("text").GetString());
       Assert.Equal("USER", root.GetProperty("contents")[0].GetProperty("parts")[0].GetProperty("text").GetString());
       JsonElement gen = root.GetProperty("generationConfig");
       Assert.Equal("application/json", gen.GetProperty("responseMimeType").GetString());
-      Assert.Equal("array", gen.GetProperty("responseSchema").GetProperty("properties").GetProperty("snippets").GetProperty("type").GetString());
+      Assert.False(gen.TryGetProperty("responseSchema", out _));
+      Assert.False(gen.TryGetProperty("thinkingConfig", out _));
+      Assert.Equal("array", gen.GetProperty("responseJsonSchema").GetProperty("properties").GetProperty("snippets").GetProperty("type").GetString());
+      Assert.False(gen.GetProperty("responseJsonSchema").GetProperty("additionalProperties").GetBoolean());
 
       Assert.Equal(150, c.InputTokens);
       Assert.Equal(100, c.OutputTokens); // candidates + thoughts
@@ -377,6 +379,29 @@ namespace subs2srs.Tests
       var ex = await Assert.ThrowsAsync<ProviderException>(() => p.CompleteJsonAsync("s", "u", Schema, CancellationToken.None));
       Assert.Equal(429, ex.Status);
       Assert.StartsWith("You exceeded your current quota", ex.ProviderMessage);
+    }
+
+    [Fact]
+    public async Task Gemini_LegacySchema_IsCleaned_AndThinkingBudgetSent()
+    {
+      var handler = new ScriptedHandler().Reply(HttpStatusCode.OK, Fixture("gemini-ok.json"));
+      var p = new GeminiProvider("gemini-2.5-flash", "k", new HttpClient(handler), FastRetry()) { UseLegacyResponseSchema = true, ThinkingBudget = 0 };
+      await p.CompleteJsonAsync("s", "u", Schema, CancellationToken.None);
+      string body = handler.Requests[0].body;
+      Assert.DoesNotContain("additionalProperties", body);
+      Assert.Contains("\"responseSchema\"", body);
+      Assert.Contains("\"thinkingBudget\":0", body);
+    }
+
+    [Fact]
+    public async Task OpenAi_SpentQuota429_IsNotRetried()
+    {
+      var handler = new ScriptedHandler().Reply(HttpStatusCode.TooManyRequests,
+        "{\"error\":{\"message\":\"You exceeded your current quota\",\"type\":\"insufficient_quota\",\"code\":\"insufficient_quota\",\"param\":null}}");
+      var p = new OpenAiProvider("gpt-5-mini", "k", new HttpClient(handler), FastRetry());
+      var ex = await Assert.ThrowsAsync<ProviderException>(() => p.CompleteJsonAsync("s", "u", Schema, CancellationToken.None));
+      Assert.Single(handler.Requests);
+      Assert.Equal(429, ex.Status);
     }
 
     [Fact]

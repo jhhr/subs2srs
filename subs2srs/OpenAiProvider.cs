@@ -11,6 +11,9 @@ namespace subs2srs
   /// Strict mode wants <c>additionalProperties: false</c> and every property required, which the
   /// grouping schema satisfies. <c>max_completion_tokens</c> is the current limit field (it covers
   /// reasoning + output); no temperature is sent because reasoning models reject non-default values.
+  /// Verified against the official docs on 2026-09-14: Chat Completions is still supported (the
+  /// Responses API is only recommended for new projects); <c>reasoning_effort</c> values differ
+  /// per model, so an unsupported one is dropped after a 400.
   /// </summary>
   public sealed class OpenAiProvider : HttpChatProvider
   {
@@ -54,6 +57,26 @@ namespace subs2srs
       HttpRequestMessage req = JsonPost(Endpoint, body);
       req.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", ApiKey);
       return req;
+    }
+
+    /// <summary>A 429 for a spent balance or spend limit does not clear by waiting (docs: insufficient_quota and the *_limit_exceeded codes).</summary>
+    protected override bool IsRetryable(int status, string body)
+    {
+      if (status != 429) return base.IsRetryable(status, body);
+      try
+      {
+        using JsonDocument doc = JsonDocument.Parse(body);
+        if (doc.RootElement.TryGetProperty("error", out JsonElement err))
+        {
+          string type = StringOrEmpty(err, "type");
+          string code = StringOrEmpty(err, "code");
+          if (type == "insufficient_quota" || code == "insufficient_quota" || code == "credit_balance_exhausted"
+              || code.EndsWith("_limit_exceeded", StringComparison.Ordinal))
+            return false;
+        }
+      }
+      catch (JsonException) { }
+      return true;
     }
 
     protected override string? Degrade(int status, string providerMessage, ISet<string> alreadyDropped)
