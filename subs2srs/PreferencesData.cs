@@ -168,12 +168,11 @@ namespace subs2srs
         public string AnthropicApiKey { get; set; } = PrefDefaults.AnthropicApiKey;
         public string OpenAiApiKey { get; set; } = PrefDefaults.OpenAiApiKey;
         public string GeminiApiKey { get; set; } = PrefDefaults.GeminiApiKey;
-        public int AnthropicRpm { get; set; } = PrefDefaults.AnthropicRpm;
-        public int AnthropicConcurrency { get; set; } = PrefDefaults.AnthropicConcurrency;
-        public int OpenAiRpm { get; set; } = PrefDefaults.OpenAiRpm;
-        public int OpenAiConcurrency { get; set; } = PrefDefaults.OpenAiConcurrency;
-        public int GeminiRpm { get; set; } = PrefDefaults.GeminiRpm;
-        public int GeminiConcurrency { get; set; } = PrefDefaults.GeminiConcurrency;
+        // The per-provider RPM/concurrency keys of earlier builds are ignored when read (unknown members are skipped).
+        public int AiMaxConcurrentRequests { get; set; } = PrefDefaults.AiMaxConcurrentRequests;
+        public int AiMaxRetries { get; set; } = PrefDefaults.AiMaxRetries;
+        public int AiMaxRetryWaitSeconds { get; set; } = PrefDefaults.AiMaxRetryWaitSeconds;
+        public int AiRequestTimeoutSeconds { get; set; } = PrefDefaults.AiRequestTimeoutSeconds;
         public string AiCacheDir { get; set; } = PrefDefaults.AiCacheDir;
         public bool AiGroupingOnGo { get; set; } = PrefDefaults.AiGroupingOnGo;
     }

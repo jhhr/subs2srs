@@ -34,7 +34,7 @@ namespace subs2srs.Eval
     public string? Name { get; set; }
     public string? Compare { get; set; }
     public bool Refresh { get; set; }
-    public int? Rpm { get; set; }
+    /// <summary>Requests in flight at once; null = the preference, 0 = auto.</summary>
     public int? Concurrency { get; set; }
     public double? MaxCostUsd { get; set; }
     public bool EstimateOnly { get; set; }
@@ -85,7 +85,8 @@ usage: subs2srs.Eval --set <dir> [--model <model> | --rules] [options]
   --chunk <n>          target lines per request (default 200, 0 = whole episode)
   --refresh            ignore cached answers and ask the model again
   --cache <dir>        answer cache (default: the app's AI cache directory / preference)
-  --rpm <n>, --concurrency <n>  override the provider's pacing from the preferences
+  --concurrency <n>    requests in flight at once (default: the AI Max Concurrent Requests
+                       preference; 0 = auto); pacing itself follows the provider's rate-limit answers
   --max-cost <usd>     stop before the first request when the estimate exceeds this amount
   --estimate           print the token/cost estimate and exit without calling the model
   --out <dir>          where reports go (default <set>/eval-reports)
@@ -97,7 +98,7 @@ usage: subs2srs.Eval --set <dir> [--model <model> | --rules] [options]
   --rules-no-cue       rules: join on the gap alone
   --rules-no-actor     rules: an actor change is not a cue
   --prefs <file>       read this preferences.json instead of the user's
-  --no-prefs           do not read preferences.json (keys and pacing from the environment/defaults)
+  --no-prefs           do not read preferences.json (keys from the environment, retry defaults)
   --verbose            echo the application log to stderr
   --help               this text
 
@@ -135,8 +136,7 @@ Exit codes: 0 ok, 1 usage, 2 no validation files, 3 cost cap exceeded, 4 every m
           case "--chunk": o.ChunkTargetLines = NextInt(); break;
           case "--refresh": o.Refresh = true; break;
           case "--cache": o.CacheDir = Next(); break;
-          case "--rpm": o.Rpm = NextInt(); break;
-          case "--concurrency": o.Concurrency = Math.Max(1, NextInt()); break;
+          case "--concurrency": o.Concurrency = NextInt(); break;
           case "--max-cost":
           {
             string v = Next();

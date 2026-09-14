@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Net.Http;
+using System.Net.Http.Headers;
 using System.Text.Json;
 
 namespace subs2srs
@@ -59,25 +60,60 @@ namespace subs2srs
       return req;
     }
 
-    /// <summary>A 429 for a spent balance or spend limit does not clear by waiting (docs: insufficient_quota and the *_limit_exceeded codes).</summary>
-    protected override bool IsRetryable(int status, string body)
+    /// <summary>The limit buckets a response reports as (remaining, reset); resets are Go durations ("6m0s").</summary>
+    public static readonly (string remaining, string reset)[] LimitBuckets =
     {
-      if (status != 429) return base.IsRetryable(status, body);
-      try
-      {
-        using JsonDocument doc = JsonDocument.Parse(body);
-        if (doc.RootElement.TryGetProperty("error", out JsonElement err))
-        {
-          string type = StringOrEmpty(err, "type");
-          string code = StringOrEmpty(err, "code");
-          if (type == "insufficient_quota" || code == "insufficient_quota" || code == "credit_balance_exhausted"
-              || code.EndsWith("_limit_exceeded", StringComparison.Ordinal))
-            return false;
-        }
-      }
-      catch (JsonException) { }
-      return true;
+      ("x-ratelimit-remaining-requests", "x-ratelimit-reset-requests"),
+      ("x-ratelimit-remaining-tokens", "x-ratelimit-reset-tokens"),
+    };
+
+    /// <summary>
+    /// A 429 for a spent balance or spend limit does not clear by waiting: <c>insufficient_quota</c>
+    /// (type or code, as in the Python reference) and the billing codes. The ordinary
+    /// <c>rate_limit_exceeded</c> is not one of them.
+    /// </summary>
+    public static bool IsSpentQuota(string body)
+    {
+      JsonElement err = ErrorObject(body);
+      if (err.ValueKind != JsonValueKind.Object) return false;
+      string type = StringOrEmpty(err, "type");
+      string code = StringOrEmpty(err, "code");
+      return type == "insufficient_quota" || code == "insufficient_quota"
+        || code == "credit_balance_exhausted" || code == "billing_hard_limit_exceeded";
     }
+
+    /// <summary>
+    /// 429: terminal for a spent quota, else retried after <c>Retry-After</c> or, without it, the
+    /// longest of the <c>x-ratelimit-reset-*</c> buckets. 500-504 retried after <c>Retry-After</c>
+    /// if given. Everything else is terminal.
+    /// </summary>
+    public static ResponseVerdict ClassifyResponse(int status, HttpResponseHeaders headers, string body, DateTimeOffset now)
+    {
+      if (status == 429)
+      {
+        if (IsSpentQuota(body)) return ResponseVerdict.Fail;
+        TimeSpan? delay = RateLimitHeaders.ParseRetryAfter(RateLimitHeaders.First(headers, "Retry-After"), now);
+        if (!delay.HasValue)
+        {
+          delay = RateLimitHeaders.Longest(
+            RateLimitHeaders.ParseGoDuration(RateLimitHeaders.First(headers, "x-ratelimit-reset-requests")),
+            RateLimitHeaders.ParseGoDuration(RateLimitHeaders.First(headers, "x-ratelimit-reset-tokens")));
+        }
+        return ResponseVerdict.Retry(delay);
+      }
+      if (RetryPolicy.IsServerError(status))
+        return ResponseVerdict.Retry(RateLimitHeaders.ParseRetryAfter(RateLimitHeaders.First(headers, "Retry-After"), now));
+      return ResponseVerdict.Fail;
+    }
+
+    /// <summary>On a success: the latest reset among the spent buckets, or null with headroom.</summary>
+    public static TimeSpan? ProactiveHoldFor(HttpResponseHeaders headers) =>
+      RateLimitHeaders.LongestExhaustedWait(headers, LimitBuckets, RateLimitHeaders.ParseGoDuration);
+
+    protected override ResponseVerdict Classify(int status, HttpResponseHeaders headers, string body, DateTimeOffset now) =>
+      ClassifyResponse(status, headers, body, now);
+
+    protected override TimeSpan? ProactiveHold(HttpResponseHeaders headers, DateTimeOffset now) => ProactiveHoldFor(headers);
 
     protected override string? Degrade(int status, string providerMessage, ISet<string> alreadyDropped)
     {

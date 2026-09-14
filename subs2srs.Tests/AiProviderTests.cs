@@ -20,16 +20,25 @@ namespace subs2srs.Tests
     public Queue<Func<HttpRequestMessage, HttpResponseMessage>> Script { get; } = new();
     public List<(string url, string body, Dictionary<string, string> headers)> Requests { get; } = new();
 
-    public static HttpResponseMessage Json(HttpStatusCode status, string body, string? retryAfter = null)
+    public static HttpResponseMessage Json(HttpStatusCode status, string body, string? retryAfter = null, IDictionary<string, string>? headers = null)
     {
       var r = new HttpResponseMessage(status) { Content = new StringContent(body, System.Text.Encoding.UTF8, "application/json") };
       if (retryAfter != null) r.Headers.TryAddWithoutValidation("Retry-After", retryAfter);
+      if (headers != null)
+        foreach (var h in headers) r.Headers.TryAddWithoutValidation(h.Key, h.Value);
       return r;
     }
 
-    public ScriptedHandler Reply(HttpStatusCode status, string body, string? retryAfter = null)
+    public ScriptedHandler Reply(HttpStatusCode status, string body, string? retryAfter = null, IDictionary<string, string>? headers = null)
     {
-      Script.Enqueue(_ => Json(status, body, retryAfter));
+      Script.Enqueue(_ => Json(status, body, retryAfter, headers));
+      return this;
+    }
+
+    /// <summary>Run <paramref name="beforeReply"/> when the request arrives (e.g. another task's 429 landing mid-flight), then answer.</summary>
+    public ScriptedHandler Reply(HttpStatusCode status, string body, Action beforeReply)
+    {
+      Script.Enqueue(_ => { beforeReply(); return Json(status, body); });
       return this;
     }
 
@@ -56,14 +65,20 @@ namespace subs2srs.Tests
     internal static string Fixture(string name) =>
       File.ReadAllText(Path.Combine(AppContext.BaseDirectory, "Fixtures", "ai", name));
 
-    private static RetryPolicy FastRetry(List<TimeSpan>? delays = null) => new RetryPolicy
+    /// <summary>3 sends at most, 10 ms backoff base, no jitter, recorded waits on a fake clock, a private cooldown tracker.</summary>
+    internal static RetryPolicy FastRetry(List<TimeSpan>? delays = null)
     {
-      MaxAttempts = 3,
-      BaseDelay = TimeSpan.FromMilliseconds(10),
-      MaxDelay = TimeSpan.FromSeconds(5),
-      Jitter = 0,
-      Delay = (d, ct) => { delays?.Add(d); return Task.CompletedTask; },
-    };
+      var clock = new FakeClock();
+      return new RetryPolicy
+      {
+        MaxRetries = 2,
+        BaseDelay = TimeSpan.FromMilliseconds(10),
+        MaxBackoff = TimeSpan.FromSeconds(5),
+        Jitter = TimeSpan.Zero,
+        Delay = (d, ct) => { delays?.Add(d); return clock.Sleep(d, ct); },
+        Tracker = new RateLimitTracker(() => clock.Now),
+      };
+    }
 
     private static JsonElement Schema => AiGroupingPrompt.Schema;
 
@@ -224,19 +239,22 @@ namespace subs2srs.Tests
     }
 
     [Fact]
-    public void BackoffFor_IsExponentialAndCapped()
+    public void BackoffFor_IsExponentialAndCapped_WithAdditiveJitter()
     {
-      var policy = new RetryPolicy { BaseDelay = TimeSpan.FromSeconds(1), MaxDelay = TimeSpan.FromSeconds(5), Jitter = 0 };
+      var policy = new RetryPolicy { BaseDelay = TimeSpan.FromSeconds(1), MaxBackoff = TimeSpan.FromSeconds(5), Jitter = TimeSpan.Zero };
       Assert.Equal(TimeSpan.FromSeconds(1), policy.BackoffFor(0));
       Assert.Equal(TimeSpan.FromSeconds(2), policy.BackoffFor(1));
       Assert.Equal(TimeSpan.FromSeconds(4), policy.BackoffFor(2));
       Assert.Equal(TimeSpan.FromSeconds(5), policy.BackoffFor(3));
 
-      var jittered = new RetryPolicy { BaseDelay = TimeSpan.FromSeconds(1), Jitter = 0.25 };
+      // The Python reference: min(60, 2^attempt) + U(0, 1) seconds.
+      var defaults = new RetryPolicy();
+      Assert.Equal(5, defaults.MaxRetries);
+      Assert.Equal(TimeSpan.FromSeconds(120), defaults.MaxRetryWait);
       for (int i = 0; i < 20; i++)
       {
-        double ms = jittered.BackoffFor(0).TotalMilliseconds;
-        Assert.InRange(ms, 750, 1250);
+        Assert.InRange(defaults.BackoffFor(0).TotalMilliseconds, 1000, 2000);
+        Assert.InRange(defaults.BackoffFor(10).TotalMilliseconds, 60_000, 61_000);
       }
     }
 

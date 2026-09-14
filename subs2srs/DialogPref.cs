@@ -819,29 +819,38 @@ namespace subs2srs
                 PrefDefaults.GeminiApiKey));
             propTable["Gemini API Key"] = ConstantSettings.GeminiApiKey;
 
-            propTable.Properties.Add(new PropertySpec("Anthropic Requests Per Minute", typeof(int),
-                "AI", "Upper bound on request starts per minute for Claude models.", PrefDefaults.AnthropicRpm));
-            propTable["Anthropic Requests Per Minute"] = ConstantSettings.AnthropicRpm;
+            propTable.Properties.Add(new PropertySpec("AI Max Concurrent Requests", typeof(int),
+                "AI",
+                "Requests in flight at once during an AI grouping run. Pacing is driven by the provider's answers:\n"
+                + "a rate-limit rejection pauses every request to that model for as long as the provider says,\n"
+                + "so this is only a backstop.\n\n"
+                + "0 = auto (" + AiBulkRunner.AutoConcurrency.ToString(System.Globalization.CultureInfo.InvariantCulture) + ").\n"
+                + "1 = one request at a time.\n\n"
+                + "Range: 0-" + HttpChatProvider.MaxConnectionsPerServer.ToString(System.Globalization.CultureInfo.InvariantCulture) + ".",
+                PrefDefaults.AiMaxConcurrentRequests));
+            propTable["AI Max Concurrent Requests"] = ConstantSettings.AiMaxConcurrentRequests;
 
-            propTable.Properties.Add(new PropertySpec("Anthropic Concurrency", typeof(int),
-                "AI", "Requests in flight at once for Claude models.", PrefDefaults.AnthropicConcurrency));
-            propTable["Anthropic Concurrency"] = ConstantSettings.AnthropicConcurrency;
+            propTable.Properties.Add(new PropertySpec("AI Max Retries", typeof(int),
+                "AI",
+                "How many times a failed request (rate limit, overload, server error, timeout) is sent again.\n\n"
+                + "Range: 0-20.",
+                PrefDefaults.AiMaxRetries));
+            propTable["AI Max Retries"] = ConstantSettings.AiMaxRetries;
 
-            propTable.Properties.Add(new PropertySpec("OpenAI Requests Per Minute", typeof(int),
-                "AI", "Upper bound on request starts per minute for OpenAI models.", PrefDefaults.OpenAiRpm));
-            propTable["OpenAI Requests Per Minute"] = ConstantSettings.OpenAiRpm;
+            propTable.Properties.Add(new PropertySpec("AI Max Retry Wait Seconds", typeof(int),
+                "AI",
+                "When the provider asks for a longer wait than this before retrying, the request gives up\n"
+                + "instead of blocking the run (the chunk then falls back to the rules).\n\n"
+                + "Range: 1-3600.",
+                PrefDefaults.AiMaxRetryWaitSeconds));
+            propTable["AI Max Retry Wait Seconds"] = ConstantSettings.AiMaxRetryWaitSeconds;
 
-            propTable.Properties.Add(new PropertySpec("OpenAI Concurrency", typeof(int),
-                "AI", "Requests in flight at once for OpenAI models.", PrefDefaults.OpenAiConcurrency));
-            propTable["OpenAI Concurrency"] = ConstantSettings.OpenAiConcurrency;
-
-            propTable.Properties.Add(new PropertySpec("Gemini Requests Per Minute", typeof(int),
-                "AI", "Upper bound on request starts per minute for Gemini models.", PrefDefaults.GeminiRpm));
-            propTable["Gemini Requests Per Minute"] = ConstantSettings.GeminiRpm;
-
-            propTable.Properties.Add(new PropertySpec("Gemini Concurrency", typeof(int),
-                "AI", "Requests in flight at once for Gemini models.", PrefDefaults.GeminiConcurrency));
-            propTable["Gemini Concurrency"] = ConstantSettings.GeminiConcurrency;
+            propTable.Properties.Add(new PropertySpec("AI Request Timeout Seconds", typeof(int),
+                "AI",
+                "How long one request may take before it counts as failed and is retried.\n\n"
+                + "Range: 10-3600.",
+                PrefDefaults.AiRequestTimeoutSeconds));
+            propTable["AI Request Timeout Seconds"] = ConstantSettings.AiRequestTimeoutSeconds;
 
             propTable.Properties.Add(new PropertySpec("AI Cache Directory", typeof(string),
                 "AI",
@@ -1432,18 +1441,14 @@ namespace subs2srs
             ConstantSettings.AnthropicApiKey = getStr("Anthropic API Key").Trim();
             ConstantSettings.OpenAiApiKey = getStr("OpenAI API Key").Trim();
             ConstantSettings.GeminiApiKey = getStr("Gemini API Key").Trim();
-            ConstantSettings.AnthropicRpm =
-                UtilsCommon.checkRange((int)propTable["Anthropic Requests Per Minute"], 1, 100000, PrefDefaults.AnthropicRpm);
-            ConstantSettings.AnthropicConcurrency =
-                UtilsCommon.checkRange((int)propTable["Anthropic Concurrency"], 1, 64, PrefDefaults.AnthropicConcurrency);
-            ConstantSettings.OpenAiRpm =
-                UtilsCommon.checkRange((int)propTable["OpenAI Requests Per Minute"], 1, 100000, PrefDefaults.OpenAiRpm);
-            ConstantSettings.OpenAiConcurrency =
-                UtilsCommon.checkRange((int)propTable["OpenAI Concurrency"], 1, 64, PrefDefaults.OpenAiConcurrency);
-            ConstantSettings.GeminiRpm =
-                UtilsCommon.checkRange((int)propTable["Gemini Requests Per Minute"], 1, 100000, PrefDefaults.GeminiRpm);
-            ConstantSettings.GeminiConcurrency =
-                UtilsCommon.checkRange((int)propTable["Gemini Concurrency"], 1, 64, PrefDefaults.GeminiConcurrency);
+            ConstantSettings.AiMaxConcurrentRequests =
+                UtilsCommon.checkRange((int)propTable["AI Max Concurrent Requests"], 0, HttpChatProvider.MaxConnectionsPerServer, PrefDefaults.AiMaxConcurrentRequests);
+            ConstantSettings.AiMaxRetries =
+                UtilsCommon.checkRange((int)propTable["AI Max Retries"], 0, 20, PrefDefaults.AiMaxRetries);
+            ConstantSettings.AiMaxRetryWaitSeconds =
+                UtilsCommon.checkRange((int)propTable["AI Max Retry Wait Seconds"], 1, 3600, PrefDefaults.AiMaxRetryWaitSeconds);
+            ConstantSettings.AiRequestTimeoutSeconds =
+                UtilsCommon.checkRange((int)propTable["AI Request Timeout Seconds"], 10, 3600, PrefDefaults.AiRequestTimeoutSeconds);
             ConstantSettings.AiCacheDir = getStr("AI Cache Directory").Trim();
             ConstantSettings.AiGroupingOnGo = (bool)propTable["AI Grouping On Go"];
 

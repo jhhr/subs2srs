@@ -16,9 +16,8 @@ namespace subs2srs
     public bool ForceRefresh { get; set; }
     /// <summary>Null = the preference / default directory.</summary>
     public string? CacheDir { get; set; }
-    /// <summary>Null = from the preferences for the model's provider.</summary>
+    /// <summary>Requests in flight at once; null = the preference, 0 = auto. Pacing itself is response-driven.</summary>
     public int? Concurrency { get; set; }
-    public int? Rpm { get; set; }
     /// <summary>Rule grouper used for chunks whose request failed.</summary>
     public RuleGrouperOptions Fallback { get; set; } = new RuleGrouperOptions();
     /// <summary>Prefix of the progress text ("AI grouping: 3 of 8 chunks").</summary>
@@ -217,9 +216,7 @@ namespace subs2srs
       if (provider is HttpChatProvider http && !http.HasApiKey)
         throw new ProviderException(provider.Name, null,
           $"No API key configured for {provider.Name}. Set it in Preferences (AI) or the {ChatProviders.EnvVarFor(provider.Name)} environment variable.");
-      string? providerName = ChatProviders.ProviderFor(options.Model) ?? provider.Name;
-      (int rpm, int concurrency) limitsFor = ChatProviders.LimitsFor(providerName);
-      var runner = new AiBulkRunner(options.Concurrency ?? limitsFor.concurrency, options.Rpm ?? limitsFor.rpm);
+      var runner = new AiBulkRunner(ChatProviders.MaxConcurrentRequests(options.Concurrency));
 
       string system = AiGroupingPrompt.BuildSystem(limits.MaxSnippetMs / 1000, options.ExtraInstructions);
       List<AiChunk> chunks = AiChunker.Split(lines, kept, limits.MaxSnippetMs, options.ChunkTargetLines);
@@ -232,7 +229,7 @@ namespace subs2srs
       if (kept.Length == 0) return result;
 
       Logger.Instance.info(FormattableString.Invariant(
-        $"AI grouping: {kept.Length} lines in {chunks.Count} chunk(s) with {options.Model} (concurrency {options.Concurrency ?? limitsFor.concurrency}, {options.Rpm ?? limitsFor.rpm} rpm)."));
+        $"AI grouping: {kept.Length} lines in {chunks.Count} chunk(s) with {options.Model} (up to {runner.MaxConcurrent} requests at once)."));
 
       BulkResult<(ChatCompletion completion, AiChunkAnswer answer)>[] outcomes = await runner.RunAsync(chunks, async (chunk, token) =>
       {

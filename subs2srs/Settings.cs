@@ -129,12 +129,11 @@ namespace subs2srs
     public const string AnthropicApiKey = "";
     public const string OpenAiApiKey = "";
     public const string GeminiApiKey = "";
-    public const int AnthropicRpm = 50;
-    public const int AnthropicConcurrency = 4;
-    public const int OpenAiRpm = 60;
-    public const int OpenAiConcurrency = 4;
-    public const int GeminiRpm = 15;
-    public const int GeminiConcurrency = 2;
+    // Pacing is response-driven (rate-limit answers install a per-model cooldown); these only bound it.
+    public const int AiMaxConcurrentRequests = 0; // 0 = auto (AiBulkRunner.AutoConcurrency)
+    public const int AiMaxRetries = 5;
+    public const int AiMaxRetryWaitSeconds = 120;
+    public const int AiRequestTimeoutSeconds = 120;
     public const string AiCacheDir = ""; // "" = <LocalApplicationData>/subs2srs/ai-cache
     public const bool AiGroupingOnGo = false;
   }
@@ -859,40 +858,31 @@ namespace subs2srs
         set => Prefs.GeminiApiKey = value ?? "";
     }
 
-    public static int AnthropicRpm
+    /// <summary>Requests in flight at once for a bulk AI run; 0 = auto.</summary>
+    public static int AiMaxConcurrentRequests
     {
-        get => Prefs.AnthropicRpm;
-        set => Prefs.AnthropicRpm = value;
+        get => Prefs.AiMaxConcurrentRequests;
+        set => Prefs.AiMaxConcurrentRequests = value;
     }
 
-    public static int AnthropicConcurrency
+    /// <summary>Retries after the first send of a request.</summary>
+    public static int AiMaxRetries
     {
-        get => Prefs.AnthropicConcurrency;
-        set => Prefs.AnthropicConcurrency = value;
+        get => Prefs.AiMaxRetries;
+        set => Prefs.AiMaxRetries = value;
     }
 
-    public static int OpenAiRpm
+    /// <summary>A provider wait hint above this gives up instead of blocking the run.</summary>
+    public static int AiMaxRetryWaitSeconds
     {
-        get => Prefs.OpenAiRpm;
-        set => Prefs.OpenAiRpm = value;
+        get => Prefs.AiMaxRetryWaitSeconds;
+        set => Prefs.AiMaxRetryWaitSeconds = value;
     }
 
-    public static int OpenAiConcurrency
+    public static int AiRequestTimeoutSeconds
     {
-        get => Prefs.OpenAiConcurrency;
-        set => Prefs.OpenAiConcurrency = value;
-    }
-
-    public static int GeminiRpm
-    {
-        get => Prefs.GeminiRpm;
-        set => Prefs.GeminiRpm = value;
-    }
-
-    public static int GeminiConcurrency
-    {
-        get => Prefs.GeminiConcurrency;
-        set => Prefs.GeminiConcurrency = value;
+        get => Prefs.AiRequestTimeoutSeconds;
+        set => Prefs.AiRequestTimeoutSeconds = value;
     }
 
     /// <summary>Where AI grouping answers are cached. Empty = &lt;LocalApplicationData&gt;/subs2srs/ai-cache.</summary>

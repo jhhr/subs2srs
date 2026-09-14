@@ -248,7 +248,7 @@ namespace subs2srs.Tests
     [Fact]
     public async Task Runner_BoundsConcurrencyAndKeepsOrder()
     {
-      var runner = new AiBulkRunner(maxConcurrent: 2, rpm: 0);
+      var runner = new AiBulkRunner(maxConcurrent: 2);
       int inFlight = 0, maxSeen = 0;
       var results = await runner.RunAsync(Enumerable.Range(0, 8).ToList(), async (i, ct) =>
       {
@@ -263,23 +263,39 @@ namespace subs2srs.Tests
     }
 
     [Fact]
-    public async Task Runner_PacesRequestStarts()
+    public async Task Runner_StartsEveryItemAtOnce_UpToTheCap()
     {
-      var delays = new List<TimeSpan>();
-      var runner = new AiBulkRunner(maxConcurrent: 4, rpm: 120) { Delay = (d, ct) => { lock (delays) delays.Add(d); return Task.CompletedTask; } };
-      await runner.RunAsync(Enumerable.Range(0, 4).ToList(), (i, ct) => Task.FromResult(i), null, "test", CancellationToken.None);
-      // 4 starts at 0.5 s spacing: three of them had to wait roughly 0.5, 1.0 and 1.5 s
-      Assert.Equal(3, delays.Count);
-      var sorted = delays.OrderBy(d => d).ToList();
-      Assert.InRange(sorted[0].TotalSeconds, 0.4, 0.6);
-      Assert.InRange(sorted[2].TotalSeconds, 1.4, 1.6);
+      // No pacer: 8 items with a cap of 8 are all in flight together; the cap is the only bound.
+      var runner = new AiBulkRunner(maxConcurrent: 8);
+      int inFlight = 0, maxSeen = 0;
+      var allStarted = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+      var results = await runner.RunAsync(Enumerable.Range(0, 8).ToList(), async (i, ct) =>
+      {
+        int now = Interlocked.Increment(ref inFlight);
+        lock (runner) maxSeen = Math.Max(maxSeen, now);
+        if (now == 8) allStarted.TrySetResult(true);
+        await Task.WhenAny(allStarted.Task, Task.Delay(2000, ct));
+        Interlocked.Decrement(ref inFlight);
+        return i;
+      }, null, "test", CancellationToken.None);
+      Assert.Equal(8, maxSeen);
+      Assert.All(results, r => Assert.True(r.Ok));
+    }
+
+    [Fact]
+    public void Runner_ZeroOrNegativeCap_IsAuto()
+    {
+      Assert.Equal(AiBulkRunner.AutoConcurrency, new AiBulkRunner(0).MaxConcurrent);
+      Assert.Equal(AiBulkRunner.AutoConcurrency, new AiBulkRunner(-3).MaxConcurrent);
+      Assert.Equal(3, new AiBulkRunner(3).MaxConcurrent);
+      Assert.True(AiBulkRunner.AutoConcurrency < HttpChatProvider.MaxConnectionsPerServer);
     }
 
     [Fact]
     public async Task Runner_FailedItemDoesNotStopOthers_AndProgressCounts()
     {
       var progress = new NullProgressReporter();
-      var runner = new AiBulkRunner(2, 0);
+      var runner = new AiBulkRunner(2);
       var results = await runner.RunAsync(new[] { 1, 2, 3 }, (i, ct) =>
         i == 2 ? Task.FromException<int>(new ProviderException("fake", 500, "boom")) : Task.FromResult(i), progress, "AI grouping", CancellationToken.None);
       Assert.True(results[0].Ok);
@@ -294,7 +310,7 @@ namespace subs2srs.Tests
     public async Task Runner_CancelsThroughTheReporter()
     {
       var progress = new CancellingProgressReporter(cancelAfterSteps: 0);
-      var runner = new AiBulkRunner(2, 0);
+      var runner = new AiBulkRunner(2);
       int calls = 0;
       await Assert.ThrowsAnyAsync<OperationCanceledException>(() => runner.RunAsync(new[] { 1, 2, 3 }, (i, ct) =>
       {
@@ -313,7 +329,6 @@ namespace subs2srs.Tests
       CacheDir = Path.Combine(scope.TempDir, "cache"),
       ForceRefresh = force,
       Concurrency = 2,
-      Rpm = 0,
     };
 
     [Fact]

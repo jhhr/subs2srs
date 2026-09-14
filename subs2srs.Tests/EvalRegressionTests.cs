@@ -82,7 +82,7 @@ namespace subs2srs.Tests
           var options = new subs2srs.Eval.EvalOptions
           {
             SetDir = dir, Model = "claude-sonnet-5", ChunkTargetLines = 0, CacheDir = Path.Combine(dir, "cache"),
-            OutDir = Path.Combine(scope.TempDir, "reports"), Concurrency = 1, Rpm = 0,
+            OutDir = Path.Combine(scope.TempDir, "reports"), Concurrency = 1,
           };
           await new subs2srs.Eval.EvalRunner(options, new StringWriter(), new StringWriter()).RunAsync(CancellationToken.None);
         }

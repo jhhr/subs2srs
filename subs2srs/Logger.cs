@@ -320,12 +320,10 @@ namespace subs2srs
       var(new { AnthropicApiKeySet = ConstantSettings.AnthropicApiKey != "" });
       var(new { OpenAiApiKeySet = ConstantSettings.OpenAiApiKey != "" });
       var(new { GeminiApiKeySet = ConstantSettings.GeminiApiKey != "" });
-      var(new { ConstantSettings.AnthropicRpm });
-      var(new { ConstantSettings.AnthropicConcurrency });
-      var(new { ConstantSettings.OpenAiRpm });
-      var(new { ConstantSettings.OpenAiConcurrency });
-      var(new { ConstantSettings.GeminiRpm });
-      var(new { ConstantSettings.GeminiConcurrency });
+      var(new { ConstantSettings.AiMaxConcurrentRequests });
+      var(new { ConstantSettings.AiMaxRetries });
+      var(new { ConstantSettings.AiMaxRetryWaitSeconds });
+      var(new { ConstantSettings.AiRequestTimeoutSeconds });
       var(new { ConstantSettings.AiCacheDir });
       var(new { ConstantSettings.AiGroupingOnGo });
       var(new { ConstantSettings.ExeFFmpeg });

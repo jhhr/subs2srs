@@ -140,7 +140,6 @@ namespace subs2srs.Eval
       ForceRefresh = options.Refresh,
       CacheDir = options.CacheDir,
       Concurrency = options.Concurrency,
-      Rpm = options.Rpm,
       Fallback = options.RuleOptions,
       ProgressLabel = file.Name,
     };

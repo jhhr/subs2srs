@@ -17,41 +17,26 @@ namespace subs2srs
 
 
   /// <summary>
-  /// Port of <c>make_inner_bulk_op</c> (plan §A.4): a semaphore bounds the requests in flight, a
-  /// pacer keeps request starts at most <c>rpm</c> per minute (60/rpm seconds apart), every item
-  /// runs to completion or failure (retries live in the provider), cancellation comes from the
-  /// progress reporter and a token, and progress says "17 of 60 chunks, ~40 s left" using the
-  /// completed items' timing.
+  /// Port of <c>make_inner_bulk_op</c> (plan §A.4): every item starts at once, up to a concurrency
+  /// backstop (<see cref="AutoConcurrency"/> or the <c>AI Max Concurrent Requests</c> preference);
+  /// pacing is left to the providers' answers (rate-limit cooldowns and retries live in
+  /// <see cref="HttpChatProvider"/>). Every item runs to completion or failure, cancellation comes
+  /// from the progress reporter and a token, and progress says "17 of 60 chunks, ~40 s left"
+  /// using the completed items' timing.
   /// </summary>
   public sealed class AiBulkRunner
   {
+    /// <summary>Requests in flight at once when the preference is 0 (auto); below <see cref="HttpChatProvider.MaxConnectionsPerServer"/>.</summary>
+    public const int AutoConcurrency = 32;
+
     private readonly int maxConcurrent;
-    private readonly TimeSpan minInterval;
-    private readonly object paceLock = new object();
-    private long nextStartTicks; // Stopwatch ticks
 
-    /// <summary>How to wait; tests replace it to record pacing instead of sleeping.</summary>
-    public Func<TimeSpan, CancellationToken, Task> Delay { get; set; } = Task.Delay;
+    public int MaxConcurrent => maxConcurrent;
 
-    public AiBulkRunner(int maxConcurrent, int rpm)
+    /// <param name="maxConcurrent">Items in flight at once; 0 or less = <see cref="AutoConcurrency"/>.</param>
+    public AiBulkRunner(int maxConcurrent)
     {
-      this.maxConcurrent = Math.Max(1, maxConcurrent);
-      minInterval = rpm <= 0 ? TimeSpan.Zero : TimeSpan.FromSeconds(60.0 / rpm);
-    }
-
-    /// <summary>Wait for the pacer's next slot. Slots are handed out in call order.</summary>
-    public async Task WaitForSlotAsync(CancellationToken ct)
-    {
-      if (minInterval <= TimeSpan.Zero) return;
-      TimeSpan wait;
-      lock (paceLock)
-      {
-        long now = Stopwatch.GetTimestamp();
-        long start = Math.Max(now, nextStartTicks);
-        wait = TimeSpan.FromSeconds((start - now) / (double)Stopwatch.Frequency);
-        nextStartTicks = start + (long)(minInterval.TotalSeconds * Stopwatch.Frequency);
-      }
-      if (wait > TimeSpan.Zero) await Delay(wait, ct).ConfigureAwait(false);
+      this.maxConcurrent = maxConcurrent <= 0 ? AutoConcurrency : maxConcurrent;
     }
 
     /// <summary>
@@ -73,7 +58,7 @@ namespace subs2srs
       using var gate = new SemaphoreSlim(maxConcurrent, maxConcurrent);
       int done = 0;
       double completedSeconds = 0;
-      var runStart = Stopwatch.StartNew();
+      int lanes = Math.Min(maxConcurrent, items.Count);
       object progressLock = new object();
 
       // Called under progressLock so that a slower task cannot overwrite a later count.
@@ -86,7 +71,7 @@ namespace subs2srs
         if (d > 0 && d < items.Count)
         {
           double avg = completedSeconds / d;
-          double left = (items.Count - d) * avg / maxConcurrent;
+          double left = (items.Count - d) * avg / lanes;
           eta = FormattableString.Invariant($", ~{Math.Max(1, Math.Round(left)):0} s left");
         }
         progress.UpdateProgress(percent, FormattableString.Invariant($"{label}: {d} of {items.Count} chunks{eta}"));
@@ -105,7 +90,6 @@ namespace subs2srs
           {
             if (progress != null && progress.Cancel) linked.Cancel();
             token.ThrowIfCancellationRequested();
-            await WaitForSlotAsync(token).ConfigureAwait(false);
             var sw = Stopwatch.StartNew();
             try
             {

@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Net.Http;
+using System.Net.Http.Headers;
 using System.Text;
 using System.Text.Json;
 
@@ -58,6 +59,47 @@ namespace subs2srs
         return "effort";
       return null;
     }
+
+    /// <summary>The limit buckets a response can report as (remaining, reset); which ones come depends on the tier.</summary>
+    public static readonly (string remaining, string reset)[] LimitBuckets =
+    {
+      ("anthropic-ratelimit-requests-remaining", "anthropic-ratelimit-requests-reset"),
+      ("anthropic-ratelimit-tokens-remaining", "anthropic-ratelimit-tokens-reset"),
+      ("anthropic-ratelimit-input-tokens-remaining", "anthropic-ratelimit-input-tokens-reset"),
+      ("anthropic-ratelimit-output-tokens-remaining", "anthropic-ratelimit-output-tokens-reset"),
+    };
+
+    /// <summary>
+    /// 429 rate_limit_error, 529 overloaded_error and 500-504 are retried, waiting <c>retry-after</c>
+    /// seconds or, without it, until the limit bucket that resets soonest (RFC 3339 <c>*-reset</c>
+    /// headers). Everything else is terminal.
+    /// </summary>
+    public static ResponseVerdict ClassifyResponse(int status, HttpResponseHeaders headers, string body, DateTimeOffset now)
+    {
+      if (status == 429 || status == 529 || RetryPolicy.IsServerError(status))
+      {
+        TimeSpan? delay = RateLimitHeaders.ParseRetryAfter(RateLimitHeaders.First(headers, "retry-after"), now);
+        if (!delay.HasValue)
+        {
+          delay = RateLimitHeaders.Soonest(
+            RateLimitHeaders.ParseRfc3339Reset(RateLimitHeaders.First(headers, "anthropic-ratelimit-requests-reset"), now),
+            RateLimitHeaders.ParseRfc3339Reset(RateLimitHeaders.First(headers, "anthropic-ratelimit-input-tokens-reset"), now),
+            RateLimitHeaders.ParseRfc3339Reset(RateLimitHeaders.First(headers, "anthropic-ratelimit-output-tokens-reset"), now),
+            RateLimitHeaders.ParseRfc3339Reset(RateLimitHeaders.First(headers, "anthropic-ratelimit-tokens-reset"), now));
+        }
+        return ResponseVerdict.Retry(delay);
+      }
+      return ResponseVerdict.Fail;
+    }
+
+    /// <summary>On a success: the latest reset among the spent buckets (tokens count as much as requests), or null with headroom.</summary>
+    public static TimeSpan? ProactiveHoldFor(HttpResponseHeaders headers, DateTimeOffset now) =>
+      RateLimitHeaders.LongestExhaustedWait(headers, LimitBuckets, v => RateLimitHeaders.ParseRfc3339Reset(v, now));
+
+    protected override ResponseVerdict Classify(int status, HttpResponseHeaders headers, string body, DateTimeOffset now) =>
+      ClassifyResponse(status, headers, body, now);
+
+    protected override TimeSpan? ProactiveHold(HttpResponseHeaders headers, DateTimeOffset now) => ProactiveHoldFor(headers, now);
 
     protected override ChatCompletion ParseResponse(JsonDocument body)
     {

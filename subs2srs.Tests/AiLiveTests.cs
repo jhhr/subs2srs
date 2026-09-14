@@ -42,7 +42,6 @@ namespace subs2srs.Tests
         CacheDir = Path.Combine(scope.TempDir, "cache"),
         ForceRefresh = true,
         Concurrency = 1,
-        Rpm = 0,
       };
 
       AiGroupingResult result = await AiGrouper.GroupAsync(lines, new SnippetLimits(15_000, 500, 0), options, null, CancellationToken.None);

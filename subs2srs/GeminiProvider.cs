@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Net.Http;
+using System.Net.Http.Headers;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 
@@ -74,6 +75,60 @@ namespace subs2srs
         return "thinkingConfig";
       return null;
     }
+
+    /// <summary>A per-day quota will not clear during this run (a <c>QuotaFailure</c> violation whose <c>quotaId</c> contains "PerDay").</summary>
+    public static bool IsDailyQuota(string body)
+    {
+      foreach (JsonElement detail in ErrorDetails(body))
+      {
+        if (!StringOrEmpty(detail, "@type").EndsWith("google.rpc.QuotaFailure", StringComparison.Ordinal)) continue;
+        if (!detail.TryGetProperty("violations", out JsonElement violations) || violations.ValueKind != JsonValueKind.Array) continue;
+        foreach (JsonElement v in violations.EnumerateArray())
+          if (StringOrEmpty(v, "quotaId").Contains("PerDay", StringComparison.Ordinal)) return true;
+      }
+      return false;
+    }
+
+    /// <summary>The <c>RetryInfo.retryDelay</c> detail ("34s"), or null.</summary>
+    public static TimeSpan? RetryDelayOf(string body)
+    {
+      foreach (JsonElement detail in ErrorDetails(body))
+      {
+        if (!StringOrEmpty(detail, "@type").EndsWith("google.rpc.RetryInfo", StringComparison.Ordinal)) continue;
+        TimeSpan? delay = RateLimitHeaders.ParseGoogleDuration(StringOrEmpty(detail, "retryDelay"));
+        if (delay.HasValue) return delay;
+      }
+      return null;
+    }
+
+    private static IEnumerable<JsonElement> ErrorDetails(string body)
+    {
+      JsonElement err = ErrorObject(body);
+      if (err.ValueKind != JsonValueKind.Object || !err.TryGetProperty("details", out JsonElement details) || details.ValueKind != JsonValueKind.Array)
+        return Array.Empty<JsonElement>();
+      var list = new List<JsonElement>();
+      foreach (JsonElement d in details.EnumerateArray())
+        if (d.ValueKind == JsonValueKind.Object) list.Add(d);
+      return list;
+    }
+
+    /// <summary>
+    /// 429: terminal for a per-day quota, else retried after the body's <c>RetryInfo.retryDelay</c>
+    /// (Gemini sends no rate-limit headers). 500-504 retried likewise. Everything else is terminal.
+    /// </summary>
+    public static ResponseVerdict ClassifyResponse(int status, HttpResponseHeaders headers, string body, DateTimeOffset now)
+    {
+      if (status == 429)
+        return IsDailyQuota(body) ? ResponseVerdict.Fail : ResponseVerdict.Retry(RetryDelayOf(body));
+      if (RetryPolicy.IsServerError(status))
+        return ResponseVerdict.Retry(RetryDelayOf(body));
+      return ResponseVerdict.Fail;
+    }
+
+    protected override ResponseVerdict Classify(int status, HttpResponseHeaders headers, string body, DateTimeOffset now) =>
+      ClassifyResponse(status, headers, body, now);
+
+    // Gemini returns no remaining-quota headers, so there is no proactive hold (the base returns null).
 
     /// <summary>Remove <c>additionalProperties</c> everywhere (objects and array items), on a copy.</summary>
     public static JsonNode CleanSchema(JsonElement schema)

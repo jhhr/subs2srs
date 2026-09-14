@@ -41,7 +41,6 @@ namespace subs2srs.Tests
       ChunkTargetLines = 0,
       CacheDir = Path.Combine(set, "..", "cache"),
       Concurrency = 1,
-      Rpm = 0,
     };
 
     private static async Task<(EvalRun? run, string output)> Run(EvalOptions options)
@@ -312,7 +311,7 @@ namespace subs2srs.Tests
       EvalOptions o = EvalOptions.Parse(new[]
       {
         "--set", "v", "--model", "gpt-5.6-luna", "--prompt", promptFile, "--chunk", "0", "--refresh", "--cache", "c",
-        "--rpm", "10", "--concurrency", "0", "--max-cost", "1.5", "--estimate", "--out", "o", "--name", "my run/1",
+        "--concurrency", "0", "--max-cost", "1.5", "--estimate", "--out", "o", "--name", "my run/1",
         "--compare", "rules", "--rules-gap", "900", "--rules-cues", "?", "--rules-no-cue", "--rules-no-actor",
         "--prefs", "p.json", "--verbose",
       });
@@ -322,8 +321,7 @@ namespace subs2srs.Tests
       Assert.Equal(0, o.ChunkTargetLines);
       Assert.True(o.Refresh);
       Assert.Equal("c", o.CacheDir);
-      Assert.Equal(10, o.Rpm);
-      Assert.Equal(1, o.Concurrency);
+      Assert.Equal(0, o.Concurrency);
       Assert.Equal(1.5, o.MaxCostUsd);
       Assert.True(o.EstimateOnly);
       Assert.Equal("o", o.OutDir);
