@@ -75,7 +75,9 @@ namespace subs2srs
         private Gtk.SpinButton _spinSnippetMaxSec, _spinGapKeep, _spinRulesMaxGap;
         private Gtk.CheckButton _chkGapRemoval, _chkRulesRequireCue, _chkRulesActorChange;
         private Gtk.Entry _txtSnippetSeparator, _txtRulesCueChars;
-        private static readonly SnippetMode[] SnippetModes = { SnippetMode.Off, SnippetMode.Rules };
+        private static readonly SnippetMode[] SnippetModes = { SnippetMode.Off, SnippetMode.Rules, SnippetMode.AI };
+        private Gtk.Entry _txtAiModel, _txtAiInstructions;
+        private Gtk.SpinButton _spinAiChunk;
 
         // Dialog result
         private bool? _result;
@@ -266,7 +268,7 @@ namespace subs2srs
 
             var lblMode = Gtk.Label.New("Grouping:"); lblMode.SetHalign(Gtk.Align.End);
             grid.Attach(lblMode, 0, r, 1, 1);
-            _dropSnippetMode = Gtk.DropDown.NewFromStrings(new[] { "Off (one card per line)", "Rules" });
+            _dropSnippetMode = Gtk.DropDown.NewFromStrings(new[] { "Off (one card per line)", "Rules", "AI (language model)" });
             _dropSnippetMode.SetHalign(Gtk.Align.Start);
             grid.Attach(_dropSnippetMode, 1, r, 2, 1);
             r++;
@@ -325,6 +327,43 @@ namespace subs2srs
                 _txtRulesCueChars.SetSensitive(_chkRulesRequireCue.GetActive());
                 _chkRulesActorChange.SetSensitive(_chkRulesRequireCue.GetActive());
             };
+
+            vbox.Append(Gtk.Separator.New(Gtk.Orientation.Horizontal));
+
+            var lblAi = Gtk.Label.New("AI: a language model groups the lines (API keys and rate limits are in Preferences)");
+            lblAi.SetXalign(0);
+            vbox.Append(lblAi);
+
+            var gridAi = Gtk.Grid.New();
+            gridAi.SetRowSpacing(6); gridAi.SetColumnSpacing(8);
+            gridAi.SetMarginStart(16);
+            int ra = 0;
+
+            var lblModel = Gtk.Label.New("Model:"); lblModel.SetHalign(Gtk.Align.End);
+            gridAi.Attach(lblModel, 0, ra, 1, 1);
+            _txtAiModel = Gtk.Entry.New(); _txtAiModel.SetText("claude-sonnet-5");
+            _txtAiModel.SetWidthChars(24);
+            _txtAiModel.SetTooltipText("The name decides the provider: claude… (Anthropic), gpt…/o1…/o3…/o4… (OpenAI), gemini… (Google)");
+            gridAi.Attach(_txtAiModel, 1, ra, 1, 1);
+            gridAi.Attach(Gtk.Label.New("claude-…, gpt-…, gemini-…"), 2, ra, 1, 1);
+            ra++;
+
+            var lblChunk = Gtk.Label.New("Lines per request:"); lblChunk.SetHalign(Gtk.Align.End);
+            gridAi.Attach(lblChunk, 0, ra, 1, 1);
+            _spinAiChunk = Gtk.SpinButton.NewWithRange(0, 2000, 50); _spinAiChunk.SetValue(200);
+            gridAi.Attach(_spinAiChunk, 1, ra, 1, 1);
+            gridAi.Attach(Gtk.Label.New("about; split only at silences longer than the max snippet length (0 = whole episode)"), 2, ra, 1, 1);
+            ra++;
+
+            var lblExtra = Gtk.Label.New("Extra instructions:"); lblExtra.SetHalign(Gtk.Align.End);
+            gridAi.Attach(lblExtra, 0, ra, 1, 1);
+            _txtAiInstructions = Gtk.Entry.New();
+            _txtAiInstructions.SetHexpand(true);
+            _txtAiInstructions.SetPlaceholderText("e.g. the show is a workplace comedy; keep jokes with their setup");
+            gridAi.Attach(_txtAiInstructions, 1, ra, 2, 1);
+            ra++;
+
+            vbox.Append(gridAi);
 
             return vbox;
         }
@@ -528,6 +567,9 @@ namespace subs2srs
             _spinRulesMaxGap.SetValue(sn.RulesMaxJoinGapMs);
             _chkRulesRequireCue.SetActive(sn.RulesRequireCue);
             _txtRulesCueChars.SetText(sn.RulesCueChars ?? "");
+            _txtAiModel.SetText(sn.AiModel ?? "");
+            _spinAiChunk.SetValue(sn.ChunkTargetLines);
+            _txtAiInstructions.SetText(sn.AiExtraInstructions ?? "");
             _chkRulesActorChange.SetActive(sn.RulesJoinOnActorChange);
             _spinGapKeep.SetSensitive(_chkGapRemoval.GetActive());
             _txtRulesCueChars.SetSensitive(_chkRulesRequireCue.GetActive());
@@ -603,6 +645,9 @@ namespace subs2srs
             s.Snippets.RulesRequireCue = _chkRulesRequireCue.GetActive();
             s.Snippets.RulesCueChars = _txtRulesCueChars.GetText();
             s.Snippets.RulesJoinOnActorChange = _chkRulesActorChange.GetActive();
+            s.Snippets.AiModel = _txtAiModel.GetText().Trim();
+            s.Snippets.ChunkTargetLines = (int)_spinAiChunk.GetValue();
+            s.Snippets.AiExtraInstructions = _txtAiInstructions.GetText();
 
             // Actors
             s.ActorList.Clear();

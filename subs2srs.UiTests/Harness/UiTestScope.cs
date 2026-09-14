@@ -24,6 +24,9 @@ namespace subs2srs.UiTests.Harness
         {
             _gtk = gtk;
             _toplevelsBefore = gtk.RunOnGtk(CountToplevels);
+            // MainWindow re-reads the preferences file; persist the isolated ones (temp AI cache
+            // dir, no logging) so that read cannot fall back to the real per-user defaults.
+            PrefIO.Write();
         }
 
         public GtkFixture Fixture => _gtk;

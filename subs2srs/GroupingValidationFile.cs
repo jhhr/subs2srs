@@ -122,7 +122,7 @@ namespace subs2srs
     /// </summary>
     public static GroupingValidationFile Build(IReadOnlyList<InfoCombined> lines, bool[] joins,
       bool[]? proposalJoins, string proposalProducer, SnippetLimits limits, int episodeNumber,
-      string subs1Path, string? subs2Path)
+      string subs1Path, string? subs2Path, string? proposalModel = null, int? proposalPromptVersion = null)
     {
       int[] kept = SnippetGrouping.KeptIndices(lines);
       var file = new GroupingValidationFile();
@@ -158,6 +158,8 @@ namespace subs2srs
         file.Proposal = new ProposalInfo
         {
           Producer = proposalProducer,
+          Model = string.IsNullOrEmpty(proposalModel) ? null : proposalModel,
+          PromptVersion = proposalPromptVersion,
           Joins = ToKeptJoins(proposalJoins, kept),
         };
       }

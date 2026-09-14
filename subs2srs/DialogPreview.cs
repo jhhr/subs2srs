@@ -20,6 +20,7 @@
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
+using System.Globalization;
 using System.Threading;
 using System.Threading.Tasks;
 using System.IO;
@@ -70,6 +71,12 @@ namespace subs2srs
         private Gtk.Picture _imgSnap;
         private Gtk.CheckButton _chkSnap;
         private Gtk.Button _btnAudio, _btnGo, _btnSaveValidation;
+        private Gtk.Button _btnRegroupAi, _btnCancel;
+        private Gtk.Box _rowActions1, _rowActions3, _rowBottom;
+        private PProgress _reporter;
+        // Written by the worker thread during an AI pass, read on the GTK thread after the await.
+        private string _aiMessage;
+        private bool _aiFailed;
         private Gtk.Button _btnUndo, _btnRedo, _btnNextDiff;
         private Gtk.Label _lblGroupStatus;
         private Gtk.Label _lblEpL, _lblEpA, _lblEpI, _lblEpC, _lblTL, _lblTA, _lblTI;
@@ -98,6 +105,11 @@ namespace subs2srs
 
         /// <summary>Text of the preview's progress bar ("Preview ready" once loaded); for tests.</summary>
         internal string ProgressText => _progress?.GetText() ?? "";
+        internal string GroupStatusText => _lblGroupStatus?.GetText() ?? "";
+        /// <summary>Tooltip text of the Group column for a row (the grouper's note), "" when none.</summary>
+        internal string GroupNoteAt(int pos) => pos >= 0 && pos < _items.Count ? _items[pos].GroupNote : "";
+        internal void ClickRegroupAi() => OnRegroupAi(_btnRegroupAi, EventArgs.Empty);
+        internal bool CancelButtonSensitive => _btnCancel?.GetSensitive() ?? false;
 
         /// <summary>The parsed, filtered and edited lines plus join vectors; what Go should generate.</summary>
         public WorkerVars PreviewVars => _wv;
@@ -317,7 +329,7 @@ namespace subs2srs
             detailBox.Append(Gtk.Separator.New(Gtk.Orientation.Horizontal));
 
             // Action buttons row 1: selection helpers, then activate/deactivate
-            var ab1 = Gtk.Box.New(Gtk.Orientation.Horizontal, 4);
+            var ab1 = _rowActions1 = Gtk.Box.New(Gtk.Orientation.Horizontal, 4);
             AppendBtn(ab1, "Select All", OnSelectAll);
             AppendBtn(ab1, "Select None", OnSelectNone);
             AppendBtn(ab1, "Invert", OnInvertSelection);
@@ -327,7 +339,7 @@ namespace subs2srs
             detailBox.Append(ab1);
 
             // Action buttons row 2: snippet grouping
-            var ab3 = Gtk.Box.New(Gtk.Orientation.Horizontal, 4);
+            var ab3 = _rowActions3 = Gtk.Box.New(Gtk.Orientation.Horizontal, 4);
             ab3.Append(Gtk.Label.New("Snippet:"));
             var bAbove = Gtk.Button.NewWithLabel("Attach ↑");
             bAbove.SetTooltipText("Attach the selected line to the line above (drag it up, or use the key from Preferences)");
@@ -343,6 +355,11 @@ namespace subs2srs
             ab3.Append(bDetach);
             ab3.Append(Gtk.Separator.New(Gtk.Orientation.Vertical));
             AppendBtn(ab3, "Regroup (rules)", OnRegroupRules);
+            _btnRegroupAi = Gtk.Button.NewWithLabel("Regroup (AI)");
+            _btnRegroupAi.SetTooltipText("Ask the model from Advanced Subtitle Options to group this episode again "
+                + "(ignores the cache). The token and cost estimate is shown on the progress bar before the call.");
+            _btnRegroupAi.OnClicked += OnRegroupAi;
+            ab3.Append(_btnRegroupAi);
             AppendBtn(ab3, "Ungroup all", OnUngroupAll);
             ab3.Append(Gtk.Separator.New(Gtk.Orientation.Vertical));
             _btnUndo = Gtk.Button.NewWithLabel("Undo");
@@ -408,10 +425,19 @@ namespace subs2srs
             _progress = Gtk.ProgressBar.New();
             _progress.SetShowText(true);
             _progress.SetText("");
-            detailBox.Append(_progress);
+            _progress.SetHexpand(true);
+            _progress.SetValign(Gtk.Align.Center);
+            var progressRow = Gtk.Box.New(Gtk.Orientation.Horizontal, 6);
+            progressRow.Append(_progress);
+            _btnCancel = Gtk.Button.NewWithLabel("Cancel");
+            _btnCancel.SetTooltipText("Stop the running preview or AI grouping");
+            _btnCancel.SetSensitive(false);
+            _btnCancel.OnClicked += (s, e) => { if (_reporter != null) _reporter.Cancel = true; };
+            progressRow.Append(_btnCancel);
+            detailBox.Append(progressRow);
 
             // Bottom buttons
-            var bot = Gtk.Box.New(Gtk.Orientation.Horizontal, 6);
+            var bot = _rowBottom = Gtk.Box.New(Gtk.Orientation.Horizontal, 6);
             bot.SetHalign(Gtk.Align.End);
             _btnSaveValidation = Gtk.Button.NewWithLabel("Save as validation");
             _btnSaveValidation.SetTooltipText("Write one JSON file per episode with the kept lines and the current grouping (for evaluating groupers)");
@@ -556,6 +582,8 @@ namespace subs2srs
 
                 var lbl = (Gtk.Label)box.GetFirstChild();
                 lbl.SetText(textSelector(item));
+                if (groupColumn)
+                    box.SetTooltipText(string.IsNullOrEmpty(item.GroupNote) ? null : item.GroupNote);
             };
 
             var col = Gtk.ColumnViewColumn.New(title, factory);
@@ -693,8 +721,8 @@ namespace subs2srs
         {
             if (_running) return;
             _running = true;
-            SetSensitive(false);
-            var reporter = new PProgress(_progress, () => _destroyed);
+            SetBusy(true);
+            var reporter = _reporter = new PProgress(_progress, () => _destroyed);
 
             WorkerVars result = null;
             Exception err = null;
@@ -713,10 +741,11 @@ namespace subs2srs
             if (_destroyed) return;
 
             _running = false;
-            SetSensitive(true);
+            _reporter = null;
+            SetBusy(false);
             if (err != null)
             {
-                _progress.SetText("Error");
+                _progress.SetText(err is OperationCanceledException ? "Cancelled" : "Error");
                 _progress.SetFraction(0);
                 if (!(err is OperationCanceledException))
                     UtilsMsg.showErrMsg(err.Message);
@@ -734,6 +763,11 @@ namespace subs2srs
             UpdateStats();
             _progress.SetText("Preview ready");
             _progress.SetFraction(1.0);
+            if (_aiMessage != null)
+            {
+                ShowGroupStatus(_aiMessage, !_aiFailed);
+                _lblGroupStatus.SetTooltipText(_aiMessage);
+            }
 
             if (_store.GetNItems() > 0)
             {
@@ -779,10 +813,17 @@ namespace subs2srs
             wv.Joins = new List<bool[]>();
             wv.ProposedJoins = mode == SnippetMode.Off ? null : new List<bool[]>();
             wv.ProposalProducer = mode == SnippetMode.Off ? null : "rules";
+            _aiMessage = null;
+            _aiFailed = false;
 
-            foreach (var lines in wv.CombinedAll)
+            for (int ep = 0; ep < wv.CombinedAll.Count; ep++)
             {
-                bool[] joins = ProposeJoins(lines, mode, limits, options);
+                var lines = wv.CombinedAll[ep];
+                bool[] joins = null;
+                if (mode == SnippetMode.AI)
+                    joins = ProposeAiJoins(wv, ep, rpt, forceRefresh: false);
+                // Rules when the mode says so, or as the fallback after a failed AI pass
+                joins ??= ProposeJoins(lines, mode == SnippetMode.AI ? SnippetMode.Rules : mode, limits, options);
                 wv.Joins.Add(joins);
                 wv.ProposedJoins?.Add((bool[])joins.Clone());
                 if (rpt.Cancel) throw new OperationCanceledException();
@@ -790,6 +831,117 @@ namespace subs2srs
             rpt.UpdateProgress(100, "Grouping lines into snippets");
 
             return wv;
+        }
+
+        /// <summary>
+        /// Run the AI grouper for one episode on the worker thread. The token/cost estimate goes to
+        /// the progress bar and the log before the call. Returns null when the provider failed
+        /// (the error text is kept for the status label) so the caller falls back to the rules;
+        /// a cancel propagates as OperationCanceledException.
+        /// </summary>
+        private bool[] ProposeAiJoins(WorkerVars wv, int ep, IProgressReporter rpt, bool forceRefresh)
+        {
+            var lines = wv.CombinedAll[ep];
+            var limits = SnippetLimits.FromSettings();
+            var aiOptions = AiGroupingOptions.FromSettings(forceRefresh);
+            aiOptions.ProgressLabel = wv.CombinedAll.Count == 1
+                ? "AI grouping" : $"AI grouping (episode {ep + 1} of {wv.CombinedAll.Count})";
+            try
+            {
+                AiCostEstimate estimate = AiGrouper.Estimate(lines, limits, aiOptions);
+                string before = $"{aiOptions.ProgressLabel}: {estimate.Describe()}";
+                rpt.UpdateProgress(0, before);
+                Logger.Instance.info(before);
+
+                AiGroupingResult result = AiGrouper.Group(lines, limits, aiOptions, rpt, rpt.Token);
+                bool[] joins = AiGrouper.ApplyToLines(result, lines);
+                wv.ProposalProducer = "ai";
+                wv.ProposalModel = result.Model;
+                wv.ProposalPromptVersion = result.PromptVersion;
+                _aiMessage = DescribeAiResult(result);
+                _aiFailed = false;
+                return joins;
+            }
+            catch (ProviderException ex)
+            {
+                Logger.Instance.info("AI grouping failed, using the rules: " + ex.Message);
+                _aiMessage = ex.Message + " (grouped with the rules instead)";
+                _aiFailed = true;
+                return null;
+            }
+        }
+
+        private static string DescribeAiResult(AiGroupingResult r)
+        {
+            if (r.FromCache) return $"AI grouping ({r.Model}): cached answer, no request made.";
+            string text = FormattableString.Invariant(
+                $"AI grouping ({r.Model}): {r.Chunks} request(s), {r.InputTokens:N0} input + {r.OutputTokens:N0} output tokens");
+            if (AiPricing.Usd(r.Model, r.InputTokens, r.OutputTokens) is double usd)
+                text += " (about $" + usd.ToString("0.000", CultureInfo.InvariantCulture) + ")";
+            if (r.FailedChunks > 0)
+                text += FormattableString.Invariant($"; {r.FailedChunks} chunk(s) fell back to the rules");
+            return text + ".";
+        }
+
+        /// <summary>While the preview or an AI pass runs: list, action rows and Go are off, Cancel is on.</summary>
+        private void SetBusy(bool busy)
+        {
+            _columnView?.SetSensitive(!busy);
+            _comboEp?.SetSensitive(!busy);
+            _rowActions1?.SetSensitive(!busy);
+            _rowActions3?.SetSensitive(!busy);
+            _rowBottom?.SetSensitive(!busy);
+            _btnCancel?.SetSensitive(busy);
+        }
+
+        private async void OnRegroupAi(Gtk.Button s, EventArgs e)
+        {
+            if (_editor == null || _wv == null || _running) return;
+            int ep = (int)_comboEp.GetSelected();
+            if (ep < 0 || ep >= _wv.CombinedAll.Count) return;
+
+            _running = true;
+            SetBusy(true);
+            var reporter = _reporter = new PProgress(_progress, () => _destroyed);
+            bool[] joins = null;
+            Exception err = null;
+            try
+            {
+                joins = await Task.Run(() => ProposeAiJoins(_wv, ep, reporter, forceRefresh: true));
+            }
+            catch (Exception ex)
+            {
+                err = ex;
+            }
+            reporter.Stop();
+            if (_destroyed) return;
+            _running = false;
+            _reporter = null;
+            SetBusy(false);
+
+            if (err != null)
+            {
+                _progress.SetText(err is OperationCanceledException ? "AI grouping cancelled" : "Error");
+                _progress.SetFraction(0);
+                if (!(err is OperationCanceledException)) UtilsMsg.showErrMsg(err.Message);
+                return;
+            }
+            _progress.SetText("Preview ready");
+            _progress.SetFraction(1.0);
+            _lblGroupStatus.SetTooltipText(_aiMessage);
+            if (joins == null)
+            {
+                ShowGroupStatus(_aiMessage ?? "AI grouping failed.", false);
+                return;
+            }
+
+            _editor.Limits = SnippetLimits.FromSettings();
+            _editor.SetJoins(joins);
+            _wv.ProposedJoins ??= new List<bool[]>();
+            while (_wv.ProposedJoins.Count < _wv.CombinedAll.Count) _wv.ProposedJoins.Add(null);
+            _wv.ProposedJoins[ep] = (bool[])joins.Clone();
+            ShowGroupStatus(_aiMessage, true);
+            AfterGroupingChange();
         }
 
         /// <summary>Rules (or nothing) followed by the limit check, as a full-index join vector.</summary>
@@ -889,6 +1041,7 @@ namespace subs2srs
                 int idx = it.Index;
                 it.GroupText = "";
                 it.GapText = "";
+                it.GroupNote = "";
                 it.Band = 0;
                 if (idx < 0 || idx >= lines.Count || !lines[idx].Active) continue;
 
@@ -898,6 +1051,7 @@ namespace subs2srs
                 if (!info.TryGetValue(idx, out var g) || g.first == g.last) continue;
 
                 it.Band = (g.ordinal % 2 == 0) ? 1 : 2;
+                it.GroupNote = lines[g.first].GroupNote ?? "";
                 if (idx == g.first) it.GroupText = $"┌ {g.dur / 1000.0:0.0}s";
                 else if (idx == g.last) it.GroupText = "└";
                 else it.GroupText = "│";
@@ -1125,6 +1279,7 @@ namespace subs2srs
             var limits = SnippetLimits.FromSettings();
             var options = RuleGrouperOptions.FromSettings();
             _editor.Limits = limits;
+            foreach (var line in _wv.CombinedAll[ep]) line.GroupNote = null;
             bool[] joins = ProposeJoins(_wv.CombinedAll[ep], SnippetMode.Rules, limits, options);
             _editor.SetJoins(joins);
 
@@ -1141,6 +1296,7 @@ namespace subs2srs
         {
             if (_editor == null) return;
             _editor.UngroupAll();
+            foreach (var line in _editor.Lines) line.GroupNote = null;
             ShowGroupStatus("All lines are single cards again.", true);
             AfterGroupingChange();
         }
@@ -1738,7 +1894,8 @@ namespace subs2srs
                 bool[] proposal = _wv.ProposedJoins != null && ep < _wv.ProposedJoins.Count ? _wv.ProposedJoins[ep] : null;
 
                 var file = GroupingValidationFile.Build(_wv.CombinedAll[ep], _wv.Joins[ep], proposal,
-                    _wv.ProposalProducer ?? "rules", limits, episodeNumber, subs1, subs2);
+                    _wv.ProposalProducer ?? "rules", limits, episodeNumber, subs1, subs2,
+                    _wv.ProposalModel, _wv.ProposalPromptVersion);
                 file.Write(SysPath.Combine(dir, GroupingValidationFile.FileName(deck, episodeNumber)));
                 written++;
             }
@@ -1869,6 +2026,9 @@ namespace subs2srs
 
         /// <summary>Gap to the previous kept line, in seconds ("" for the first kept line).</summary>
         public string GapText { get; set; } = "";
+
+        /// <summary>The grouper's note for the snippet this line is in (tooltip of the Group column).</summary>
+        public string GroupNote { get; set; } = "";
 
         /// <summary>0 = not in a multi-line snippet, 1/2 = alternating colour band.</summary>
         public int Band { get; set; }

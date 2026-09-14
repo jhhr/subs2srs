@@ -29,8 +29,8 @@ namespace subs2srs.Tests
             string srt = Path.Combine(scope.TempDir, "ep01.srt");
             File.WriteAllText(srt, "1\r\n00:00:01,000 --> 00:00:02,000\r\nx\r\n");
 
-            var file = GroupingValidationFile.Build(lines, joins, proposal, "rules",
-                new SnippetLimits(15_000, 500, 0), 7, srt, null);
+            var file = GroupingValidationFile.Build(lines, joins, proposal, "ai",
+                new SnippetLimits(15_000, 500, 0), 7, srt, null, "claude-sonnet-5", 3);
 
             Assert.Equal(1, file.Version);
             Assert.Equal("ep01.srt", file.Source.Subs1);
@@ -47,8 +47,11 @@ namespace subs2srs.Tests
             Assert.Equal("00:00:02.400", file.Lines[1].S);
             Assert.Null(file.Lines[0].T2);                     // no Subs2 configured
             Assert.Equal(new[] { true, false }, file.Joins);   // kept projection, n-1 entries
-            Assert.Equal("rules", file.Proposal!.Producer);
+            Assert.Equal("ai", file.Proposal!.Producer);
+            Assert.Equal("claude-sonnet-5", file.Proposal.Model);
+            Assert.Equal(3, file.Proposal.PromptVersion);
             Assert.Equal(new[] { false, false }, file.Proposal.Joins);
+            Assert.Contains("\"model\": \"claude-sonnet-5\"", file.ToJson());
         }
 
         [Fact]
