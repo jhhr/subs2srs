@@ -2,6 +2,7 @@
 //  SPDX-License-Identifier: GPL-3.0-or-later
 
 using System;
+using System.Collections.Generic;
 using System.Diagnostics;
 using System.Globalization;
 using System.IO;
@@ -203,6 +204,95 @@ namespace subs2srs.Tests
             double duration = ProbeDuration(snippetVideo);
             // stream-copy cuts land on keyframes (every 6 frames at 25 fps), so allow some slack
             Assert.InRange(duration, 1.8, 2.8);
+        }
+
+        // ── omitted line inside a snippet: B appears nowhere ────────────────
+
+        /// <summary>
+        /// Parse + filter like the preview, omit "To the station." (line 1) and
+        /// join "Where are you going?" to the next kept line "See you later.",
+        /// so the omitted line B (2.4-3.4 s) lies inside the snippet A + C.
+        /// </summary>
+        private static (WorkerVars wv, List<bool[]> joins) OmitBAndJoinAC(TestScope scope)
+        {
+            var wv = new WorkerVars(null, Path.Combine(scope.TempDir, "preview"), WorkerVars.SubsProcessingType.Preview);
+            Directory.CreateDirectory(wv.MediaDir);
+            var worker = new WorkerSubs();
+            wv.CombinedAll = worker.combineAllSubs(wv, new NullProgressReporter());
+            wv.CombinedAll = worker.inactivateLines(wv, new NullProgressReporter());
+            Assert.Equal(4, wv.CombinedAll[0].Count);
+            wv.CombinedAll[0][1].Active = false;
+            return (wv, new List<bool[]> { new[] { true, false, false, false } });
+        }
+
+        private static void AssertBAppearsNowhereInTheText(string[] lines)
+        {
+            Assert.Equal(2, lines.Length); // A+C, Bye.
+            Assert.Contains("Where are you going?<br>See you later.", lines[0]);
+            Assert.Contains("Wohin gehst du?<br>Bis später.", lines[0]);
+            foreach (string line in lines)
+            {
+                Assert.DoesNotContain("To the station.", line);
+                Assert.DoesNotContain("Zum Bahnhof.", line);
+            }
+        }
+
+        [RequiresFfmpegFact]
+        public async Task OmittedLineInsideASnippet_AppearsNowhere_TextAudioVideo()
+        {
+            await TestMedia.EnsureAsync();
+            using var scope = new TestScope();
+            Configure(scope, SnippetMode.Off, gapRemoval: true, video: true);
+            string srt2 = TestMedia.WriteDialogueTranslationSrt(scope.TempDir);
+            Settings.Instance.Subs[1].FilePattern = srt2;
+            Settings.Instance.Subs[1].Files = UtilsSubs.getSubsFiles(srt2).ToArray();
+            Settings.Instance.Subs[1].Encoding = "utf-8";
+            Settings.Instance.Snapshots.Enabled = false;
+
+            var (wv, joins) = OmitBAndJoinAC(scope);
+            await new SubsProcessor().StartAsync(new NullProgressReporter(), wv.CombinedAll, joins);
+
+            Assert.Empty(scope.Msgs.Errors);
+            var lines = TsvLines(scope);
+            AssertBAppearsNowhereInTheText(lines);
+
+            string media = MediaDir(scope);
+            string audio = Path.Combine(media, SoundFile(lines[0]));
+            Assert.True(File.Exists(audio));
+            Assert.Matches(@"\b01\.000-.*07\.000\.", Path.GetFileName(audio)); // A's start to C's end in the name
+
+            // A (1.0 s) + 200 ms kept of the A->C gap + C (1.0 s) = 2.2 s; B's 1.0 s is gone
+            double duration = ProbeDuration(audio);
+            Assert.InRange(duration, 2.05, 2.35);
+
+            // the video clip is cut from the same list; keyframe snapping only approximates it
+            var avis = Directory.GetFiles(media, "*.avi").Select(Path.GetFileName).ToArray();
+            Assert.Equal(2, avis.Length);
+            string video = Path.Combine(media, avis.Single(f => f!.Contains("01.000-") && f.Contains("07.000")));
+            Assert.InRange(ProbeDuration(video), 1.5, 3.4);
+        }
+
+        [RequiresFfmpegFact]
+        public async Task OmittedLineInsideASnippet_IsCutEvenWithGapRemovalOff()
+        {
+            await TestMedia.EnsureAsync();
+            using var scope = new TestScope();
+            Configure(scope, SnippetMode.Off, gapRemoval: false);
+            string srt2 = TestMedia.WriteDialogueTranslationSrt(scope.TempDir);
+            Settings.Instance.Subs[1].FilePattern = srt2;
+            Settings.Instance.Subs[1].Files = UtilsSubs.getSubsFiles(srt2).ToArray();
+            Settings.Instance.Subs[1].Encoding = "utf-8";
+
+            var (wv, joins) = OmitBAndJoinAC(scope);
+            await new SubsProcessor().StartAsync(new NullProgressReporter(), wv.CombinedAll, joins);
+
+            Assert.Empty(scope.Msgs.Errors);
+            var lines = TsvLines(scope);
+            AssertBAppearsNowhereInTheText(lines);
+
+            // the whole 1.0-7.0 s span (6.0 s) minus B's 2.4-3.4 s = 5.0 s
+            double duration = ProbeDuration(Path.Combine(MediaDir(scope), SoundFile(lines[0])));
+            Assert.InRange(duration, 4.85, 5.2);
         }
     }
 }
