@@ -976,6 +976,44 @@ namespace subs2srs
   }
 
 
+  /// <summary>Container/codec of an animated snapshot.</summary>
+  [JsonConverter(typeof(JsonStringEnumConverter))]
+  public enum AnimatedSnapshotFormat
+  {
+    /// <summary>Animated WebP (libwebp). Rendered by every Anki client.</summary>
+    Webp,
+    /// <summary>Animated AVIF (AV1). Smaller, but needs a recent Anki.</summary>
+    Avif
+  }
+
+
+  /// <summary>
+  /// Short animated clip of the line, cut straight from the source video with no
+  /// audio (what mpvacious calls an animated snapshot). Its own output type next
+  /// to Snapshots; the TSV gets one more column after the snapshot.
+  /// </summary>
+  public class AnimatedSnapshots
+  {
+    public bool Enabled { get; set; }
+    public AnimatedSnapshotFormat Format { get; set; } = AnimatedSnapshotFormat.Webp;
+
+    /// <summary>Frames per second of the animation.</summary>
+    public int Fps { get; set; } = 10;
+
+    /// <summary>Output height in pixels; the width follows the aspect ratio. Never upscales.</summary>
+    public int Height { get; set; } = 350;
+
+    /// <summary>
+    /// 0–100, higher is better and larger (libwebp's -quality scale; mapped onto
+    /// the AV1 crf scale for avif).
+    /// </summary>
+    public int Quality { get; set; } = 20;
+
+    /// <summary>Pixels cut off each edge of the source frame before scaling.</summary>
+    public ImageCrop Crop { get; set; } = new ImageCrop();
+  }
+
+
 #if ENABLE_VOBSUB
   public class VobSubColors
   {
@@ -1064,6 +1102,9 @@ namespace subs2srs
 
     [JsonPropertyName("snapshots")]
     public Snapshots Snapshots { get; set; }
+
+    [JsonPropertyName("animatedSnapshots")]
+    public AnimatedSnapshots AnimatedSnapshots { get; set; }
 
     [JsonPropertyName("vobSubColors")]
     public VobSubColors VobSubColors { get; set; }
@@ -1186,6 +1227,7 @@ namespace subs2srs
       AudioClips = other.AudioClips;
       AudioClips.Files = Array.Empty<string>();
       Snapshots = other.Snapshots;
+      AnimatedSnapshots = other.AnimatedSnapshots ?? new AnimatedSnapshots();
       VobSubColors = other.VobSubColors;
       LanguageSpecific = other.LanguageSpecific;
       Snippets = other.Snippets ?? new SnippetSettings();
@@ -1272,6 +1314,8 @@ namespace subs2srs
       Snapshots = new Snapshots();
       Snapshots.Enabled = ConstantSettings.DefaultEnableSnapshotsGeneration;
       Snapshots.Quality = ConstantSettings.DefaultSnapshotJpegQuality;
+
+      AnimatedSnapshots = new AnimatedSnapshots();
 
       VideoClips = new VideoClips();
       VideoClips.Enabled = ConstantSettings.DefaultEnableVideoClipsGeneration;

@@ -242,6 +242,14 @@ namespace subs2srs
       var(new { Settings.Instance.Snapshots.Size.Height });
       var(new { Settings.Instance.Snapshots.Quality });
 
+      info("Animated Snapshots:");
+      var(new { Settings.Instance.AnimatedSnapshots.Enabled });
+      var(new { Settings.Instance.AnimatedSnapshots.Format });
+      var(new { Settings.Instance.AnimatedSnapshots.Fps });
+      var(new { Settings.Instance.AnimatedSnapshots.Height });
+      var(new { Settings.Instance.AnimatedSnapshots.Quality });
+      var(new { Settings.Instance.AnimatedSnapshots.Crop.Bottom });
+
       info("Video Clips:");
       var(new { Settings.Instance.VideoClips.AudioStream });
       var(new { Settings.Instance.VideoClips.BitrateAudio });

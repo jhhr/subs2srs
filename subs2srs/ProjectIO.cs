@@ -63,6 +63,7 @@ namespace subs2srs
             loaded.AudioClips      ??= def.AudioClips;
             loaded.VideoClips      ??= def.VideoClips;
             loaded.Snapshots       ??= def.Snapshots;
+            loaded.AnimatedSnapshots ??= def.AnimatedSnapshots;
             loaded.VobSubColors    ??= def.VobSubColors;
             loaded.LanguageSpecific ??= def.LanguageSpecific;
             loaded.Snippets        ??= def.Snippets;
