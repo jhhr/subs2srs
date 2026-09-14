@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+**Grouping evaluation** (developers):
+- New console project `subs2srs.Eval` (not shipped; `make eval ARGS="..."` or `dotnet run --project subs2srs.Eval -- --set <dir> [--model <model> | --rules]`) scores a grouper against the validation files written by *Save as validation*: precision, recall and F1 per boundary, exact-match rate per snippet with an over-merged / under-merged breakdown, per file and summed over the tuning set, the hold-out set (files under a `holdout/` folder, or `--holdout <dir>`) and all files, plus tokens and cost. Model runs go through the app's own chunker, prompt, provider layer, answer repair and cache, so a run costs nothing the second time; `--prompt` appends extra instructions for prompt iteration, `--estimate` and `--max-cost` keep spending in check, `--compare <run>` diffs two runs boundary by boundary with the line texts, and the rule knobs (`--rules-gap`, `--rules-cues`, ...) tune the zero-cost baseline. Reports: a table on stdout and `<run>.run.json`, `.csv`, `.md`.
+- A no-network regression test scores the cached answers of a configured model against hold-out fixtures in `subs2srs.Tests/Fixtures/eval/` and skips until they exist (see the README there).
+
 **AI grouping** (Advanced Subtitle Options → Snippets, mode *AI*):
 - A language model can propose the multi-line snippets. The model name picks the provider: `claude-…` (Anthropic Messages API), `gpt-…`/`o1…`/`o3…`/`o4…` (OpenAI Chat Completions) or `gemini-…` (Google Gemini `generateContent`), all called directly over HTTPS with structured JSON output, no SDKs. Default `claude-sonnet-5`. Per project: the model, the target number of lines per request (200; requests are split only at silences longer than the maximum snippet length, 0 = whole episode) and free-text extra instructions for the prompt.
 - Preferences gain an **AI** section: an API key per provider (stored in `preferences.json`; the `ANTHROPIC_API_KEY`, `OPENAI_API_KEY` and `GEMINI_API_KEY` environment variables override them; keys are never written to the log), requests per minute and concurrency per provider, the cache directory and *AI Grouping On Go*.

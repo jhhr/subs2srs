@@ -28,8 +28,12 @@
 | `subs2srs.Tests` | `AiLiveTests.cs` | xUnit (live, skipped) | One real provider call; runs only with `SUBS2SRS_AI_LIVE_MODEL=<model>` and the provider's key in the environment |
 | `subs2srs.UiTests` | `PreviewAiGroupingTests.cs` | xUnit (GTK) | Preview in AI mode with the fake provider: pass on open, note tooltips, Regroup (AI), validation proposal block, provider error shown with rules fallback |
 | `subs2srs.UiTests` | `SnippetsOptionsUiTests.cs` | xUnit (GTK) | Snippets options page loads and saves the AI mode, model, lines per request and extra instructions |
+| `subs2srs.Tests` | `GroupingEvalTests.cs` | xUnit | Grouping scorer (boundary P/R/F1, snippet exact / over- / under-merged, micro-averaged sums, diff) and evaluation-set discovery with the `holdout/` convention |
+| `subs2srs.Tests` | `EvalRunnerTests.cs` | xUnit | The `subs2srs.Eval` console: rules and model runs with the fake provider (scores, cache reuse, `--refresh`, `--estimate`, `--max-cost`, provider failure, `--compare`), argument parsing, and the built console launched once on a validation file made from the test dialogue |
+| `subs2srs.Tests` | `EvalRegressionTests.cs` | xUnit (fixtures, skipped) | Gate on the hold-out set: cached model answers in `Fixtures/eval` must reach the F1 floor of `regression.json`; the gate itself is verified on a synthetic fixture directory |
 
 `[RequiresFfmpegFact]` skips a test when ffmpeg is missing; `[RequiresFfmpegEncoderFact(format)]` also when the ffmpeg found has no encoder for that animated snapshot format.
+`[RequiresEnvFact(var)]` runs only with that environment variable set (the live provider test). `[RequiresEvalFixturesFact]` runs only when `Fixtures/eval` holds hold-out files and cached answers for the current prompt version.
 
 ## Running
 
