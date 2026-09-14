@@ -95,6 +95,20 @@ namespace subs2srs
         private Gtk.SpinButton _spinSnapshotCropBottom;
         private Gtk.SpinButton _spinSnapshotQuality;
 
+        // ── Animated snapshot fields (same tab) ─────────────────────────────
+        internal Gtk.CheckButton _chkGenerateAnimatedSnapshots;
+        internal Gtk.DropDown _comboAnimatedFormat;
+        private Gtk.StringList _animatedFormatModel;
+        internal Gtk.SpinButton _spinAnimatedFps;
+        internal Gtk.SpinButton _spinAnimatedHeight;
+        internal Gtk.SpinButton _spinAnimatedQuality;
+        internal Gtk.SpinButton _spinAnimatedCropBottom;
+        private Gtk.Grid _gridAnimated;
+        internal Gtk.Label _lblAnimatedHint;
+        internal Gtk.Notebook _notebook;
+        private static readonly AnimatedSnapshotFormat[] AnimatedFormats = { AnimatedSnapshotFormat.Webp, AnimatedSnapshotFormat.Avif };
+        private static readonly string[] AnimatedFormatNames = { "WebP", "AVIF" };
+
         // ── Video tab fields ────────────────────────────────────────────────
         internal Gtk.CheckButton _chkGenerateVideo;
         private Gtk.SpinButton _spinVideoWidth;
@@ -157,6 +171,37 @@ namespace subs2srs
                 Logger.Instance.error("ffmpeg not found (ToolsDir='" + ConstantSettings.ToolsDir + "')");
                 UtilsMsg.showErrMsg(ConstantSettings.FFmpegMissingMessage);
             }
+            UtilsAnimatedSnapshot.OverrideAvailableEncoders(null); // re-probe: the tools dir may have changed
+            UpdateAnimatedSnapshotAvailability();
+        }
+
+        /// <summary>
+        /// Animated snapshots need an encoder for the chosen format (libwebp or an
+        /// AV1 encoder). Without one the option is switched off and disabled, with
+        /// a hint; the format drop-down stays usable so another format can be picked.
+        /// </summary>
+        internal void UpdateAnimatedSnapshotAvailability()
+        {
+            if (_chkGenerateAnimatedSnapshots == null) return;
+            AnimatedSnapshotFormat format = SelectedAnimatedFormat();
+            bool available = ConstantSettings.IsFFmpegAvailable && UtilsAnimatedSnapshot.EncoderFor(format) != null;
+            if (!available)
+            {
+                _chkGenerateAnimatedSnapshots.SetActive(false);
+                _lblAnimatedHint.SetText(ConstantSettings.IsFFmpegAvailable
+                    ? UtilsAnimatedSnapshot.MissingEncoderHint(format)
+                    : "ffmpeg not found; animated snapshots are unavailable.");
+            }
+            _chkGenerateAnimatedSnapshots.SetSensitive(available);
+            _lblAnimatedHint.SetVisible(!available);
+            _gridAnimated.SetSensitive(available && _chkGenerateAnimatedSnapshots.GetActive());
+            _comboAnimatedFormat.SetSensitive(ConstantSettings.IsFFmpegAvailable);
+        }
+
+        private AnimatedSnapshotFormat SelectedAnimatedFormat()
+        {
+            uint i = _comboAnimatedFormat.GetSelected();
+            return i < AnimatedFormats.Length ? AnimatedFormats[i] : AnimatedSnapshotFormat.Webp;
         }
 
         // ═══════════════════════════════════════════════════════════════════
@@ -188,6 +233,7 @@ namespace subs2srs
             mainVBox.SetMarginEnd(8);
 
             var notebook = Gtk.Notebook.New();
+            _notebook = notebook;
             notebook.AppendPage(BuildMainTab(), Gtk.Label.New("Main"));
             notebook.AppendPage(BuildAudioTab(), Gtk.Label.New("Audio"));
             notebook.AppendPage(BuildSnapshotTab(), Gtk.Label.New("Snapshots"));
@@ -788,6 +834,70 @@ namespace subs2srs
             grid.Attach(lblQual, 2, 3, 1, 1);
 
             vbox.Append(grid);
+
+            // ── Animated snapshots: a short silent animation of the line (webp/avif)
+            vbox.Append(Gtk.Separator.New(Gtk.Orientation.Horizontal));
+
+            _chkGenerateAnimatedSnapshots = Gtk.CheckButton.NewWithLabel("Generate Animated Snapshots (silent webp/avif of the line)");
+            _chkGenerateAnimatedSnapshots.SetActive(false);
+            _chkGenerateAnimatedSnapshots.OnToggled += (s, e) =>
+                _gridAnimated.SetSensitive(_chkGenerateAnimatedSnapshots.GetSensitive() && _chkGenerateAnimatedSnapshots.GetActive());
+            vbox.Append(_chkGenerateAnimatedSnapshots);
+
+            _lblAnimatedHint = Gtk.Label.New("");
+            _lblAnimatedHint.SetHalign(Gtk.Align.Start);
+            _lblAnimatedHint.SetWrap(true);
+            _lblAnimatedHint.AddCssClass("dim-label");
+            _lblAnimatedHint.SetVisible(false);
+            vbox.Append(_lblAnimatedHint);
+
+            _gridAnimated = Gtk.Grid.New();
+            _gridAnimated.SetRowSpacing(6); _gridAnimated.SetColumnSpacing(6);
+
+            AttachLabel(_gridAnimated, "Format:", 0, 0);
+            _animatedFormatModel = Gtk.StringList.New(AnimatedFormatNames);
+            _comboAnimatedFormat = Gtk.DropDown.New(_animatedFormatModel, null);
+            _comboAnimatedFormat.SetSelected(0); // WebP
+            _comboAnimatedFormat.OnNotify += (s, e) =>
+            {
+                if (e.Pspec.GetName() == "selected") UpdateAnimatedSnapshotAvailability();
+            };
+            _gridAnimated.Attach(_comboAnimatedFormat, 1, 0, 1, 1);
+            var lblFormat = Gtk.Label.New("(WebP plays everywhere; AVIF is smaller but needs a recent Anki)");
+            lblFormat.SetHalign(Gtk.Align.Start);
+            _gridAnimated.Attach(lblFormat, 2, 0, 1, 1);
+
+            AttachLabel(_gridAnimated, "Frames/s:", 0, 1);
+            _spinAnimatedFps = Gtk.SpinButton.NewWithRange(1, 30, 1);
+            _spinAnimatedFps.Value = 10;
+            _gridAnimated.Attach(_spinAnimatedFps, 1, 1, 1, 1);
+
+            AttachLabel(_gridAnimated, "Height:", 0, 2);
+            _spinAnimatedHeight = Gtk.SpinButton.NewWithRange(16, 2160, 2);
+            _spinAnimatedHeight.Value = 350;
+            _gridAnimated.Attach(_spinAnimatedHeight, 1, 2, 1, 1);
+            var lblHeight = Gtk.Label.New("px (width keeps the aspect ratio; never upscaled)");
+            lblHeight.SetHalign(Gtk.Align.Start);
+            _gridAnimated.Attach(lblHeight, 2, 2, 1, 1);
+
+            AttachLabel(_gridAnimated, "Quality:", 0, 3);
+            _spinAnimatedQuality = Gtk.SpinButton.NewWithRange(0, 100, 5);
+            _spinAnimatedQuality.Value = 20;
+            _gridAnimated.Attach(_spinAnimatedQuality, 1, 3, 1, 1);
+            var lblAnimQual = Gtk.Label.New("(0 = smallest, 100 = best; 10-30 is plenty for cards)");
+            lblAnimQual.SetHalign(Gtk.Align.Start);
+            _gridAnimated.Attach(lblAnimQual, 2, 3, 1, 1);
+
+            AttachLabel(_gridAnimated, "Crop Bottom:", 0, 4);
+            _spinAnimatedCropBottom = Gtk.SpinButton.NewWithRange(0, 2160, 2);
+            _spinAnimatedCropBottom.Value = 0;
+            _gridAnimated.Attach(_spinAnimatedCropBottom, 1, 4, 1, 1);
+            var lblCropPx = Gtk.Label.New("px");
+            lblCropPx.SetHalign(Gtk.Align.Start);
+            _gridAnimated.Attach(lblCropPx, 2, 4, 1, 1);
+
+            _gridAnimated.SetSensitive(false);
+            vbox.Append(_gridAnimated);
             return vbox;
         }
 
@@ -948,6 +1058,16 @@ namespace subs2srs
             _spinSnapshotCropBottom.Value = s.Snapshots.Crop.Bottom;
             _spinSnapshotQuality.Value = s.Snapshots.Quality > 0 ? s.Snapshots.Quality : 3;
 
+            var a = s.AnimatedSnapshots ?? new AnimatedSnapshots();
+            int animFormatIdx = Array.IndexOf(AnimatedFormats, a.Format);
+            _comboAnimatedFormat.SetSelected((uint)(animFormatIdx >= 0 ? animFormatIdx : 0));
+            _spinAnimatedFps.Value = a.Fps > 0 ? a.Fps : 10;
+            _spinAnimatedHeight.Value = a.Height > 0 ? a.Height : 350;
+            _spinAnimatedQuality.Value = a.Quality;
+            _spinAnimatedCropBottom.Value = a.Crop?.Bottom ?? 0;
+            _chkGenerateAnimatedSnapshots.SetActive(a.Enabled);
+            UpdateAnimatedSnapshotAvailability();
+
             // ── Video tab
             _chkGenerateVideo.SetActive(s.VideoClips.Enabled);
             _spinVideoWidth.Value = s.VideoClips.Size.Width > 0 ? s.VideoClips.Size.Width : 240;
@@ -1070,6 +1190,15 @@ namespace subs2srs
                 Settings.Instance.Snapshots.Size.Height = (int)_spinSnapshotHeight.Value;
                 Settings.Instance.Snapshots.Crop.Bottom = (int)_spinSnapshotCropBottom.Value;
                 Settings.Instance.Snapshots.Quality = (int)_spinSnapshotQuality.Value;
+
+                // Animated snapshots
+                var anim = Settings.Instance.AnimatedSnapshots;
+                anim.Enabled = _chkGenerateAnimatedSnapshots.GetActive();
+                anim.Format = SelectedAnimatedFormat();
+                anim.Fps = (int)_spinAnimatedFps.Value;
+                anim.Height = (int)_spinAnimatedHeight.Value;
+                anim.Quality = (int)_spinAnimatedQuality.Value;
+                anim.Crop.Bottom = (int)_spinAnimatedCropBottom.Value;
 
                 // Video clips
                 Settings.Instance.VideoClips.Enabled = _chkGenerateVideo.GetActive();
