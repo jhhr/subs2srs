@@ -17,7 +17,8 @@
 | `subs2srs.Tests` | `GroupingValidationFileTests.cs` | xUnit | Validation JSON: build from lines, round trip, omission settings |
 | `subs2srs.Tests` | `KeyBindingTests.cs` | xUnit | GTK accelerator string parsing and matching |
 | `subs2srs.Tests` | `SnippetSettingsTests.cs` | xUnit | Snippet settings defaults, project-file round trip, old projects |
-| `subs2srs.Tests` | `SnippetE2ETests.cs` | xUnit (ffmpeg) | Rules grouping + gap removal through the whole pipeline; clip durations checked with ffprobe; preview joins override the rules; video concat |
+| `subs2srs.Tests` | `SnippetE2ETests.cs` | xUnit (ffmpeg) | Rules grouping + gap removal through the whole pipeline; clip durations checked with ffprobe; preview joins override the rules; video concat; an omitted line inside a snippet appears in no text field and no clip, with gap removal on and off |
+| `subs2srs.Tests` | `SnippetMediaTests.cs` | xUnit | The one range list a grouped card's audio, video and animated snapshot are cut from: kept lines only, omitted lines subtracted in both gap modes, kept dialogue wins over an overlapping omitted line, shared pad, plain-line and sentence-join fallbacks, settings plumbing |
 | `subs2srs.Tests` | `AnimatedSnapshotTests.cs` | xUnit | Animated snapshot settings (defaults, project round trip), `ffmpeg -encoders` parsing and encoder choice, `-vf`/codec argument builders (culture-safe) |
 | `subs2srs.Tests` | `AnimatedSnapshotE2ETests.cs` | xUnit (ffmpeg + encoder) | Animated webp/avif through the whole pipeline: files, frame counts (WebP RIFF chunks, ffprobe for avif), gap removal shortens the animation, TSV column, Off, missing encoder reported |
 | `subs2srs.UiTests` | `AnimatedSnapshotUiTests.cs` | xUnit (GTK) | Snapshots-tab controls follow the encoder probe and the checkbox; Go writes animated webp |
