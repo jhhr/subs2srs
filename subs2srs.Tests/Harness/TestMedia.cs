@@ -84,6 +84,15 @@ namespace subs2srs.Tests.Harness
             (7.2, 8.2, "Bye."),
         };
 
+        /// <summary>A translation of <see cref="DialogueLines"/>, same timings, for a subs2 file.</summary>
+        public static readonly string[] DialogueTranslations =
+        {
+            "Wohin gehst du?",
+            "Zum Bahnhof.",
+            "Bis später.",
+            "Tschüss.",
+        };
+
         /// <summary>Write <see cref="DialogueLines"/> as a UTF-8 SRT file and return its path.</summary>
         public static string WriteDialogueSrt(string dir)
         {
@@ -96,6 +105,22 @@ namespace subs2srs.Tests.Harness
                 sb.Append(text).Append("\r\n\r\n");
             }
             string path = Path.Combine(dir, "dialogue.srt");
+            File.WriteAllText(path, sb.ToString(), new UTF8Encoding(false));
+            return path;
+        }
+
+        /// <summary>Write <see cref="DialogueTranslations"/> with the dialogue timings as a UTF-8 SRT file (subs2) and return its path.</summary>
+        public static string WriteDialogueTranslationSrt(string dir)
+        {
+            var sb = new StringBuilder();
+            for (int i = 0; i < DialogueLines.Length; i++)
+            {
+                var (start, end, _) = DialogueLines[i];
+                sb.Append(i + 1).Append("\r\n");
+                sb.Append(SrtTime(start)).Append(" --> ").Append(SrtTime(end)).Append("\r\n");
+                sb.Append(DialogueTranslations[i]).Append("\r\n\r\n");
+            }
+            string path = Path.Combine(dir, "dialogue.de.srt");
             File.WriteAllText(path, sb.ToString(), new UTF8Encoding(false));
             return path;
         }

@@ -55,9 +55,8 @@ namespace subs2srs
     public static string KeyFor(IReadOnlyList<InfoCombined> lines, int[] kept, string model, SnippetLimits limits,
       int chunkTargetLines, string? extraInstructions)
     {
-      bool hasSubs2 = AiGroupingPrompt.HasSubs2(lines);
       var whole = new AiChunk { KeptStart = 0, KeptEnd = kept.Length - 1 };
-      string content = kept.Length == 0 ? "[]" : AiGroupingPrompt.BuildUser(lines, kept, whole, hasSubs2);
+      string content = kept.Length == 0 ? "[]" : AiGroupingPrompt.BuildUser(lines, kept, whole);
       var sb = new StringBuilder();
       sb.Append("v=").Append(AiGroupingPrompt.PromptVersion).Append('\n');
       sb.Append("model=").Append((model ?? "").Trim()).Append('\n');

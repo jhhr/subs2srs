@@ -179,14 +179,13 @@ namespace subs2srs
       if (!options.ForceRefresh && cache.TryGet(AiGroupingCache.KeyFor(lines, kept, options.Model, limits, options.ChunkTargetLines, options.ExtraInstructions)) != null)
         return new AiCostEstimate { Cached = true };
 
-      bool hasSubs2 = AiGroupingPrompt.HasSubs2(lines);
-      string system = AiGroupingPrompt.BuildSystem(limits.MaxSnippetMs / 1000, hasSubs2, options.ExtraInstructions);
+      string system = AiGroupingPrompt.BuildSystem(limits.MaxSnippetMs / 1000, options.ExtraInstructions);
       int systemTokens = AiGroupingPrompt.EstimateTokens(system);
       List<AiChunk> chunks = AiChunker.Split(lines, kept, limits.MaxSnippetMs, options.ChunkTargetLines);
       int input = 0, output = 0;
       foreach (AiChunk chunk in chunks)
       {
-        input += systemTokens + AiGroupingPrompt.EstimateTokens(AiGroupingPrompt.BuildUser(lines, kept, chunk, hasSubs2));
+        input += systemTokens + AiGroupingPrompt.EstimateTokens(AiGroupingPrompt.BuildUser(lines, kept, chunk));
         output += AiGroupingPrompt.EstimateOutputTokens(chunk.Count);
       }
       return new AiCostEstimate
@@ -222,8 +221,7 @@ namespace subs2srs
       (int rpm, int concurrency) limitsFor = ChatProviders.LimitsFor(providerName);
       var runner = new AiBulkRunner(options.Concurrency ?? limitsFor.concurrency, options.Rpm ?? limitsFor.rpm);
 
-      bool hasSubs2 = AiGroupingPrompt.HasSubs2(lines);
-      string system = AiGroupingPrompt.BuildSystem(limits.MaxSnippetMs / 1000, hasSubs2, options.ExtraInstructions);
+      string system = AiGroupingPrompt.BuildSystem(limits.MaxSnippetMs / 1000, options.ExtraInstructions);
       List<AiChunk> chunks = AiChunker.Split(lines, kept, limits.MaxSnippetMs, options.ChunkTargetLines);
       var result = new AiGroupingResult
       {
@@ -238,7 +236,7 @@ namespace subs2srs
 
       BulkResult<(ChatCompletion completion, AiChunkAnswer answer)>[] outcomes = await runner.RunAsync(chunks, async (chunk, token) =>
       {
-        string user = AiGroupingPrompt.BuildUser(lines, kept, chunk, hasSubs2);
+        string user = AiGroupingPrompt.BuildUser(lines, kept, chunk);
         ChatCompletion completion = await provider.CompleteJsonAsync(system, user, AiGroupingPrompt.Schema, token).ConfigureAwait(false);
         return (completion, AiAnswerParser.Parse(completion.Text, chunk));
       }, progress, options.ProgressLabel, ct).ConfigureAwait(false);

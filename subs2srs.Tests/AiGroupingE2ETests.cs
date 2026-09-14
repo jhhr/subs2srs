@@ -61,6 +61,41 @@ namespace subs2srs.Tests
       Assert.NotEmpty(Directory.GetFiles(Path.Combine(scope.TempDir, "ai-cache"), "*.json"));
     }
 
+    /// <summary>
+    /// The grouper decides on subs1 alone (nothing of subs2 reaches the model), and the subs2 text
+    /// follows the grouping in the card because the snippet merges both tracks with the same parts.
+    /// </summary>
+    [RequiresFfmpegFact]
+    public async Task AiOnGo_SendsSubs1Only_AndSubs2FollowsTheGrouping()
+    {
+      await TestMedia.EnsureAsync();
+      using var scope = new TestScope();
+      ConfigureAi(scope, onGo: true);
+      string srt2 = TestMedia.WriteDialogueTranslationSrt(scope.TempDir);
+      Settings.Instance.Subs[1].FilePattern = srt2;
+      Settings.Instance.Subs[1].Files = UtilsSubs.getSubsFiles(srt2).ToArray();
+      Settings.Instance.Subs[1].Encoding = "utf-8";
+      var fake = new FakeChatProvider(answer: FakeChatProvider.JoinAll("one scene"));
+      using var _ = fake.Install();
+
+      await new SubsProcessor().StartAsync(new NullProgressReporter());
+
+      Assert.Empty(scope.Msgs.Errors);
+      (string system, string user) request = Assert.Single(fake.Requests);
+      Assert.DoesNotContain("t2", request.system);
+      Assert.DoesNotContain("\"t2\"", request.user);
+      foreach (string translation in TestMedia.DialogueTranslations)
+      {
+        Assert.DoesNotContain(translation, request.user);
+        Assert.DoesNotContain(translation, request.system);
+      }
+      Assert.Contains("Where are you going?", request.user);
+
+      string row = Assert.Single(SnippetE2ETests.TsvLines(scope));
+      Assert.Contains("Where are you going?<br>To the station.<br>See you later.<br>Bye.", row);
+      Assert.Contains("Wohin gehst du?<br>Zum Bahnhof.<br>Bis später.<br>Tschüss.", row);
+    }
+
     [RequiresFfmpegFact]
     public async Task AiWithoutOnGo_FallsBackToRules_WithoutCallingTheModel()
     {

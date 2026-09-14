@@ -24,9 +24,9 @@ namespace subs2srs.Tests
     private static string MakeSet(TestScope scope)
     {
       string set = Path.Combine(scope.TempDir, "validation");
-      var lines = SnippetGroupingTests.Dialogue();
-      GroupingValidationFile.Build(lines, new[] { true, false, false, false }, new[] { true, false, true, false }, "rules", Limits, 1, "ep01.srt", null)
-        .Write(Path.Combine(set, "show_1.grouping.json"));
+      var lines = SnippetGroupingTests.Dialogue(); // the helper fills subs2 with the upper-cased text
+      GroupingValidationFile.Build(lines, new[] { true, false, false, false }, new[] { true, false, true, false }, "rules", Limits, 1, "ep01.srt", "ep01.en.srt")
+        .Write(Path.Combine(set, "show_1.grouping.json")); // carries t2 (labelling context), which must never be sent
       var lines2 = SnippetGroupingTests.Dialogue();
       lines2[3].Subs1.Text = "Bye bye."; // a different episode text, so the two files never share a cache entry
       GroupingValidationFile.Build(lines2, new[] { true, true, false, false }, null, "rules", Limits, 2, "ep02.srt", null)
@@ -154,6 +154,11 @@ namespace subs2srs.Tests
       Assert.Equal("claude-sonnet-5_v" + AiGroupingPrompt.PromptVersion + "_c0", run.Name); // chunk 0 is not the default
       Assert.Equal(AiGroupingPrompt.PromptVersion, run.PromptVersion);
       Assert.Equal(2, fake.Requests.Count); // one chunk per file
+      // subs1 only: the tuning file carries t2, the model never sees it
+      Assert.NotNull(GroupingValidationFile.Read(Path.Combine(set, "show_1.grouping.json")).Lines[0].T2);
+      Assert.All(fake.Requests, r => Assert.DoesNotContain("\"t2\"", r.user));
+      Assert.All(fake.Requests, r => Assert.DoesNotContain("WHERE ARE YOU GOING?", r.user));
+      Assert.All(fake.Requests, r => Assert.DoesNotContain("t2", r.system));
       EvalFileRecord tuning = run.Files.Single(f => !f.IsHoldout);
       Assert.Equal(new[] { true, true, true }, tuning.Predicted!.Take(3)); // JoinAll, 7.2 s span fits the limit
       Assert.Equal(1, tuning.Score!.TruePositives);

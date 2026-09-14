@@ -252,8 +252,8 @@ namespace subs2srs.Eval
         foreach (int k in diff)
         {
           string t1 = file != null && k < file.File.Lines.Count ? file.File.Lines[k].T : "";
-          string t2 = file != null && k + 1 < file.File.Lines.Count ? file.File.Lines[k + 1].T : "";
-          details.Append(FormattableString.Invariant($"| {k} | {Mark(GroupingScorer.JoinAt(mine.Truth, k))} | {Mark(GroupingScorer.JoinAt(mine.Predicted, k))} | {Mark(GroupingScorer.JoinAt(theirs.Predicted, k))} | {Cell(t1)} | {Cell(t2)} |\n"));
+          string tNext = file != null && k + 1 < file.File.Lines.Count ? file.File.Lines[k + 1].T : "";
+          details.Append(FormattableString.Invariant($"| {k} | {Mark(GroupingScorer.JoinAt(mine.Truth, k))} | {Mark(GroupingScorer.JoinAt(mine.Predicted, k))} | {Mark(GroupingScorer.JoinAt(theirs.Predicted, k))} | {Cell(t1)} | {Cell(tNext)} |\n"));
         }
       }
       sb.Append(FormattableString.Invariant($"\n{matched} file(s) compared; F1 (all) {other.All.F1 * 100:0.0} -> {current.All.F1 * 100:0.0} ({Signed(current.All.F1 - other.All.F1)}); {fixedTotal} boundary(ies) fixed, {brokenTotal} broken.\n"));

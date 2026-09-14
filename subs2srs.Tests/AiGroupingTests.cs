@@ -78,16 +78,16 @@ namespace subs2srs.Tests
     // ── prompt ────────────────────────────────────────────────────────
 
     [Fact]
-    public void Prompt_UserContent_HasKeptPositionsTimesAndText()
+    public void Prompt_UserContent_HasKeptPositionsTimesAndSubs1TextOnly()
     {
       var lines = new List<InfoCombined>
       {
-        Line(1.0, 2.0, "Where?", actor: "A"),
+        Line(1.0, 2.0, "Where?", actor: "A"), // the helper gives every line a subs2 text ("WHERE?")
         Line(2.5, 3.0, "skip me", active: false),
         Line(3.5, 4.0, "Here."),
       };
       int[] kept = SnippetGrouping.KeptIndices(lines);
-      string user = AiGroupingPrompt.BuildUser(lines, kept, new AiChunk { KeptStart = 0, KeptEnd = 1 }, hasSubs2: true);
+      string user = AiGroupingPrompt.BuildUser(lines, kept, new AiChunk { KeptStart = 0, KeptEnd = 1 });
       using JsonDocument doc = JsonDocument.Parse(user);
       JsonElement arr = doc.RootElement;
       Assert.Equal(2, arr.GetArrayLength());
@@ -96,21 +96,26 @@ namespace subs2srs.Tests
       Assert.Equal("00:00:02.000", arr[0].GetProperty("e").GetString());
       Assert.Equal("A", arr[0].GetProperty("actor").GetString());
       Assert.Equal("Where?", arr[0].GetProperty("t").GetString());
-      Assert.Equal("WHERE?", arr[0].GetProperty("t2").GetString());
       Assert.Equal(1, arr[1].GetProperty("i").GetInt32());
       Assert.Equal("Here.", arr[1].GetProperty("t").GetString());
       Assert.DoesNotContain("skip me", user);
+      // subs1 only: the translation track is never sent, even when it exists
+      Assert.False(arr[0].TryGetProperty("t2", out _));
+      Assert.DoesNotContain("WHERE?", user);
+      Assert.DoesNotContain("HERE.", user);
+      Assert.Equal(new[] { "i", "s", "e", "actor", "t" }, arr[0].EnumerateObject().Select(p => p.Name).ToArray());
     }
 
     [Fact]
-    public void Prompt_System_MentionsLimitAndExtraInstructions()
+    public void Prompt_System_MentionsLimitAndExtraInstructions_NotTheTranslation()
     {
-      string s = AiGroupingPrompt.BuildSystem(12, true, "the show is a workplace comedy");
+      string s = AiGroupingPrompt.BuildSystem(12, "the show is a workplace comedy");
       Assert.Contains("12 seconds", s);
-      Assert.Contains("t2", s);
+      Assert.DoesNotContain("t2", s);
+      Assert.DoesNotContain("translation", s);
       Assert.EndsWith("the show is a workplace comedy", s);
-      Assert.DoesNotContain("Additional instructions", AiGroupingPrompt.BuildSystem(15, false, "  "));
-      Assert.Equal(1, AiGroupingPrompt.PromptVersion);
+      Assert.DoesNotContain("Additional instructions", AiGroupingPrompt.BuildSystem(15, "  "));
+      Assert.Equal(2, AiGroupingPrompt.PromptVersion); // v2: subs1 only
     }
 
     [Fact]
@@ -188,6 +193,21 @@ namespace subs2srs.Tests
       Assert.NotEqual(k1, AiGroupingCache.KeyFor(lines, kept, "claude-sonnet-5", Limits(), 200, "comedy"));
       lines[2].Active = false;
       Assert.NotEqual(k1, AiGroupingCache.KeyFor(lines, SnippetGrouping.KeptIndices(lines), "claude-sonnet-5", Limits(), 200, ""));
+    }
+
+    [Fact]
+    public void CacheKey_IgnoresTheTranslationTrack()
+    {
+      var withSubs2 = Episode(6, 3); // the helper fills Subs2 with upper-cased text
+      var withoutSubs2 = Episode(6, 3);
+      foreach (InfoCombined line in withoutSubs2) line.Subs2.Text = "";
+      var changedSubs2 = Episode(6, 3);
+      changedSubs2[1].Subs2.Text = "a different translation";
+      int[] kept = SnippetGrouping.KeptIndices(withSubs2);
+
+      string key = AiGroupingCache.KeyFor(withSubs2, kept, "claude-sonnet-5", Limits(), 200, "");
+      Assert.Equal(key, AiGroupingCache.KeyFor(withoutSubs2, kept, "claude-sonnet-5", Limits(), 200, ""));
+      Assert.Equal(key, AiGroupingCache.KeyFor(changedSubs2, kept, "claude-sonnet-5", Limits(), 200, ""));
     }
 
     [Fact]

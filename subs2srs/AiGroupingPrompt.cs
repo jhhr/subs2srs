@@ -83,7 +83,7 @@ namespace subs2srs
   /// </summary>
   public static class AiGroupingPrompt
   {
-    public const int PromptVersion = 1;
+    public const int PromptVersion = 2; // v2: subs1 only, the translation track is not sent
 
     /// <summary>JSON schema of the answer: {"snippets":[{"first":int,"last":int,"note":string}]}.</summary>
     public static JsonElement Schema { get; } = JsonDocument.Parse(
@@ -98,13 +98,16 @@ namespace subs2srs
       DefaultIgnoreCondition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull,
     };
 
-    public static string BuildSystem(int maxSnippetSeconds, bool hasSubs2, string? extraInstructions)
+    /// <summary>
+    /// The system prompt. Only the first subtitle track is described: the grouping is decided on subs1,
+    /// and the second track (already synced to subs1 by subs2srs) follows it when the snippet is built.
+    /// </summary>
+    public static string BuildSystem(int maxSnippetSeconds, string? extraInstructions)
     {
       var sb = new StringBuilder();
       sb.Append("You group consecutive subtitle lines of a TV episode into short dialogue snippets for language-learning flashcards. ");
       sb.Append("Each snippet becomes one card with its audio, so a snippet must be understandable on its own.\n\n");
-      sb.Append("Input: a JSON array of lines in order. Each line has i (index), s and e (start and end time), actor (may be empty), t (the dialogue text)");
-      sb.Append(hasSubs2 ? " and t2 (a translation, for your understanding only).\n\n" : ".\n\n");
+      sb.Append("Input: a JSON array of lines in order. Each line has i (index), s and e (start and end time), actor (may be empty) and t (the dialogue text).\n\n");
       sb.Append("Rules:\n");
       sb.Append("- A snippet is a range of consecutive lines, first..last inclusive. Ranges must not overlap. Lines you leave out become single-line cards.\n");
       sb.Append("- Group lines only when a line is not self-contained: an answer without its question, a reply that depends on the previous line, deixis (this, that, there) that the previous line resolves, a sentence split across lines, a joke or callback that needs its setup.\n");
@@ -120,36 +123,26 @@ namespace subs2srs
       return sb.ToString();
     }
 
-    /// <summary>The user content for one chunk: a JSON array of the chunk's kept lines with i = kept position.</summary>
-    public static string BuildUser(IReadOnlyList<InfoCombined> lines, int[] kept, AiChunk chunk, bool hasSubs2)
+    /// <summary>
+    /// The user content for one chunk: a JSON array of the chunk's kept lines with i = kept position.
+    /// Subs1 only; <see cref="InfoCombined.Subs2"/> is never sent.
+    /// </summary>
+    public static string BuildUser(IReadOnlyList<InfoCombined> lines, int[] kept, AiChunk chunk)
     {
       var items = new List<Dictionary<string, object?>>(chunk.Count);
       for (int k = chunk.KeptStart; k <= chunk.KeptEnd; k++)
       {
         InfoCombined line = lines[kept[k]];
-        var item = new Dictionary<string, object?>
+        items.Add(new Dictionary<string, object?>
         {
           ["i"] = k,
           ["s"] = GroupingValidationFile.FormatTime(line.Subs1.StartTime),
           ["e"] = GroupingValidationFile.FormatTime(line.Subs1.EndTime),
           ["actor"] = line.Subs1.Actor ?? "",
           ["t"] = line.Subs1.Text ?? "",
-        };
-        if (hasSubs2)
-        {
-          string t2 = line.Subs2?.Text ?? "";
-          if (t2 != "") item["t2"] = t2;
-        }
-        items.Add(item);
+        });
       }
       return JsonSerializer.Serialize(items, LineJson);
-    }
-
-    public static bool HasSubs2(IReadOnlyList<InfoCombined> lines)
-    {
-      foreach (InfoCombined line in lines)
-        if (!string.IsNullOrWhiteSpace(line.Subs2?.Text)) return true;
-      return false;
     }
 
     /// <summary>
