@@ -136,6 +136,7 @@ namespace subs2srs
         public string SrsVideoFilenamePrefix { get; set; } = PrefDefaults.SrsVideoFilenamePrefix;
         public string SrsVideoFilenameSuffix { get; set; } = PrefDefaults.SrsVideoFilenameSuffix;
         public string VideoFilenameFormat { get; set; } = PrefDefaults.VideoFilenameFormat;
+        public string AnimatedSnapshotFilenameFormat { get; set; } = PrefDefaults.AnimatedSnapshotFilenameFormat;
 
         // ── Subs formatting ──────────────────────────────────────────────────
         public string SrsSubs1Format { get; set; } = PrefDefaults.SrsSubs1Format;

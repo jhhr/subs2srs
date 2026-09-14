@@ -315,6 +315,17 @@ namespace subs2srs
         }
       }
 
+      // Add animated snapshot (same context rules as the still snapshot)
+      if (Settings.Instance.AnimatedSnapshots.Enabled)
+      {
+        if (formatType == FormatType.Normal
+          || ((formatType == FormatType.Leading) && Settings.Instance.ContextLeadingIncludeSnapshots)
+          || ((formatType == FormatType.Trailing) && Settings.Instance.ContextTrailingIncludeSnapshots))
+        {
+          outText += ConstantSettings.SrsDelimiter + formatAnimatedSnapshot(comb, episodeIndex);
+        }
+      }
+
       // Add video clip
       if (Settings.Instance.VideoClips.Enabled)
       {
@@ -426,6 +437,29 @@ namespace subs2srs
         progressCount, startTime, endTime, comb.Subs1.Text, comb.Subs2.Text);
 
       return $"{prefixStr}{nameStr}{suffixStr}";
+    }
+
+
+    /// <summary>
+    /// Format an animated snapshot: the snapshot prefix/suffix (an img tag) around
+    /// the animated snapshot filename plus the extension of the chosen format.
+    /// </summary>
+    private string formatAnimatedSnapshot(InfoCombined comb, int episodeIndex)
+    {
+      TimeSpan startTime = comb.Subs1.StartTime;
+      TimeSpan endTime = comb.Subs1.EndTime;
+      string extension = UtilsAnimatedSnapshot.Extension(Settings.Instance.AnimatedSnapshots.Format);
+
+      string prefixStr = name.createName(ConstantSettings.SrsSnapshotFilenamePrefix, episodeIndex + Settings.Instance.EpisodeStartNumber,
+        progressCount, startTime, endTime, comb.Subs1.Text, comb.Subs2.Text);
+
+      string nameStr = name.createName(ConstantSettings.AnimatedSnapshotFilenameFormat, episodeIndex + Settings.Instance.EpisodeStartNumber,
+        progressCount, startTime, endTime, comb.Subs1.Text, comb.Subs2.Text);
+
+      string suffixStr = name.createName(ConstantSettings.SrsSnapshotFilenameSuffix, episodeIndex + Settings.Instance.EpisodeStartNumber,
+        progressCount, startTime, endTime, comb.Subs1.Text, comb.Subs2.Text);
+
+      return $"{prefixStr}{nameStr}{extension}{suffixStr}";
     }
 
 

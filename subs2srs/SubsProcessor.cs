@@ -183,6 +183,20 @@ namespace subs2srs
                 if (!snapshotWorker.genSnapshots(workerVars, dialogProgress)) throw new OperationCanceledException();
             }
 
+            if (Settings.Instance.AnimatedSnapshots.Enabled)
+            {
+                dialogProgress.NextStep(++currentStep, "Generate animated snapshots");
+
+                // Same context rules as the still snapshots.
+                if (((Settings.Instance.ContextLeadingCount > 0) && Settings.Instance.ContextLeadingIncludeSnapshots) || ((Settings.Instance.ContextTrailingCount > 0) && Settings.Instance.ContextTrailingIncludeSnapshots))
+                    workerVars.CombinedAll = combinedAllWithContext;
+                else
+                    workerVars.CombinedAll = subsWorker.removeContextOnlyLines(combinedAllWithContext);
+
+                WorkerAnimatedSnapshot animatedWorker = new WorkerAnimatedSnapshot();
+                if (!animatedWorker.genAnimatedSnapshots(workerVars, dialogProgress)) throw new OperationCanceledException();
+            }
+
             if (Settings.Instance.VideoClips.Enabled)
             {
                 dialogProgress.NextStep(++currentStep, "Generate video clips");
@@ -216,6 +230,7 @@ namespace subs2srs
             if (ConstantSettings.SrsSequenceMarkerFormat != "") { srsFormat += "\n" + listNum.ToString() + ") Sequence Marker"; listNum++; }
             if (Settings.Instance.AudioClips.Enabled) { srsFormat += "\n" + listNum.ToString() + ") Audio clip"; listNum++; }
             if (Settings.Instance.Snapshots.Enabled) { srsFormat += "\n" + listNum.ToString() + ") Snapshot"; listNum++; }
+            if (Settings.Instance.AnimatedSnapshots.Enabled) { srsFormat += "\n" + listNum.ToString() + ") Animated snapshot"; listNum++; }
             if (Settings.Instance.VideoClips.Enabled) { srsFormat += "\n" + listNum.ToString() + ") Video clip"; listNum++; }
             
             srsFormat += "\n" + listNum.ToString() + ") Line from Subs1"; listNum++;
@@ -233,6 +248,7 @@ namespace subs2srs
             if ((Settings.Instance.ContextLeadingCount > 0) || (Settings.Instance.ContextTrailingCount > 0)) numSteps++;
             if (Settings.Instance.AudioClips.Enabled) numSteps++;
             if (Settings.Instance.Snapshots.Enabled) numSteps++;
+            if (Settings.Instance.AnimatedSnapshots.Enabled) numSteps++;
             if (Settings.Instance.VideoClips.Enabled) numSteps++;
             return numSteps;
         }

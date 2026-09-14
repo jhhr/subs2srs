@@ -19,9 +19,9 @@ namespace subs2srs.Tests
     /// </summary>
     public class SnippetE2ETests
     {
-        private const string Deck = "SnipDeck";
+        internal const string Deck = "SnipDeck";
 
-        private static string Configure(TestScope scope, SnippetMode mode, bool gapRemoval, bool video = false)
+        internal static string Configure(TestScope scope, SnippetMode mode, bool gapRemoval, bool video = false)
         {
             string srt = TestMedia.WriteDialogueSrt(scope.TempDir);
             var s = Settings.Instance;
@@ -60,10 +60,10 @@ namespace subs2srs.Tests
             return srt;
         }
 
-        private static string[] TsvLines(TestScope scope) =>
+        internal static string[] TsvLines(TestScope scope) =>
             File.ReadAllLines(Path.Combine(scope.OutputDir, Deck + ".tsv"), Encoding.UTF8).Where(l => l.Length > 0).ToArray();
 
-        private static string MediaDir(TestScope scope) => Path.Combine(scope.OutputDir, Deck + ".media");
+        internal static string MediaDir(TestScope scope) => Path.Combine(scope.OutputDir, Deck + ".media");
 
         /// <summary>Duration in seconds as reported by ffprobe.</summary>
         internal static double ProbeDuration(string file)

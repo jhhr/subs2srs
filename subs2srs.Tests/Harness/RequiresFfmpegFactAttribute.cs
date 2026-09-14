@@ -27,6 +27,21 @@ namespace subs2srs.Tests.Harness
         }
     }
 
+    /// <summary>
+    /// A [Fact] that is skipped when ffmpeg is missing or offers none of the
+    /// encoders subs2srs can use for the given animated snapshot format.
+    /// </summary>
+    public sealed class RequiresFfmpegEncoderFactAttribute : FactAttribute
+    {
+        public RequiresFfmpegEncoderFactAttribute(AnimatedSnapshotFormat format)
+        {
+            if (!FfmpegProbe.IsAvailable)
+                Skip = "ffmpeg not found on PATH";
+            else if (UtilsAnimatedSnapshot.EncoderFor(format) == null)
+                Skip = "ffmpeg has no encoder for animated " + format.ToString().ToLowerInvariant();
+        }
+    }
+
     public static class FfmpegProbe
     {
         private static readonly Lazy<bool> _available = new(() =>

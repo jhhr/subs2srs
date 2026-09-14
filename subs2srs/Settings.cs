@@ -101,6 +101,7 @@ namespace subs2srs
     public const string AudioFilenameFormat = "${deck_name}_${0:episode_num}_${0:s_total_hour}.${0:s_min}.${0:s_sec}.${0:s_msec}-${0:e_total_hour}.${0:e_min}.${0:e_sec}.${0:e_msec}.mp3";
     public const string SnapshotFilenameFormat = "${deck_name}_${0:episode_num}_${0:m_total_hour}.${0:m_min}.${0:m_sec}.${0:m_msec}.jpg";
     public const string VideoFilenameFormat = "${deck_name}_${0:episode_num}_${0:s_total_hour}.${0:s_min}.${0:s_sec}.${0:s_msec}-${0:e_total_hour}.${0:e_min}.${0:e_sec}.${0:e_msec}";
+    public const string AnimatedSnapshotFilenameFormat = "${deck_name}_${0:episode_num}_${0:s_total_hour}.${0:s_min}.${0:s_sec}.${0:s_msec}-${0:e_total_hour}.${0:e_min}.${0:e_sec}.${0:e_msec}"; // extension follows the format
     public const string VobsubFilenameFormat = "${deck_name}_${0:episode_num}_Stream_${0:stream_num}_${0:s_total_hour}.${0:s_min}.${0:s_sec}.${0:s_msec}-${0:e_total_hour}.${0:e_min}.${0:e_sec}.${0:e_msec}.png";
     public const string AudioId3Artist = "${deck_name}";
     public const string AudioId3Album = "${deck_name}_${0:episode_num}";
@@ -718,6 +719,12 @@ namespace subs2srs
     {
         get => Prefs.VideoFilenameFormat;
         set => Prefs.VideoFilenameFormat = value;
+    }
+
+    public static string AnimatedSnapshotFilenameFormat
+    {
+        get => Prefs.AnimatedSnapshotFilenameFormat;
+        set => Prefs.AnimatedSnapshotFilenameFormat = value;
     }
 
     public static string SrsSubs1Format

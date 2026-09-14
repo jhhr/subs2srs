@@ -611,6 +611,14 @@ namespace subs2srs
                 PrefDefaults.VideoFilenameFormat));
             propTable["Video Clip Filename Format"] = ConstantSettings.VideoFilenameFormat;
 
+            // animated_snapshot_filename_format
+            propTable.Properties.Add(new PropertySpec("Animated Snapshot Filename Format", typeof(string),
+                "Snapshot Formatting (Uses Tokens)",
+                "The format to use for animated snapshot filenames, without the extension (.webp or .avif is added). "
+                + "You must ensure that each filename will be unique.\n\nSupported Tokens: All.",
+                PrefDefaults.AnimatedSnapshotFilenameFormat));
+            propTable["Animated Snapshot Filename Format"] = ConstantSettings.AnimatedSnapshotFilenameFormat;
+
             // srs_video_filename_suffix
             propTable.Properties.Add(new PropertySpec("Video Clip Suffix", typeof(string),
                 "SRS File Formatting (Uses Tokens)",
@@ -1325,6 +1333,7 @@ namespace subs2srs
 
             ConstantSettings.SrsVideoFilenamePrefix = getStr("Video Clip Prefix");
             ConstantSettings.VideoFilenameFormat = getStrRequired("Video Clip Filename Format");
+            ConstantSettings.AnimatedSnapshotFilenameFormat = getStrRequired("Animated Snapshot Filename Format");
             ConstantSettings.SrsVideoFilenameSuffix = getStr("Video Clip Suffix");
 
             ConstantSettings.SrsVobsubFilenamePrefix = getStr("Vobsub Prefix");

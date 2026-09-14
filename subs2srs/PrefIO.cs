@@ -209,6 +209,7 @@ namespace subs2srs
                 prefs.SrsSnapshotFilenameSuffix = getStr("srs_snapshot_filename_suffix", PrefDefaults.SrsSnapshotFilenameSuffix);
                 prefs.SrsVideoFilenamePrefix = getStr("srs_video_filename_prefix", PrefDefaults.SrsVideoFilenamePrefix);
                 prefs.VideoFilenameFormat = getStr("video_filename_format", PrefDefaults.VideoFilenameFormat);
+                prefs.AnimatedSnapshotFilenameFormat = getStr("animated_snapshot_filename_format", PrefDefaults.AnimatedSnapshotFilenameFormat);
                 prefs.SrsVideoFilenameSuffix = getStr("srs_video_filename_suffix", PrefDefaults.SrsVideoFilenameSuffix);
                 prefs.SrsSubs1Format = getStr("srs_subs1_format", PrefDefaults.SrsSubs1Format);
                 prefs.SrsSubs2Format = getStr("srs_subs2_format", PrefDefaults.SrsSubs2Format);

@@ -399,6 +399,7 @@ namespace subs2srs
       var(new { ConstantSettings.AudioFilenameFormat });
       var(new { ConstantSettings.SnapshotFilenameFormat });
       var(new { ConstantSettings.VideoFilenameFormat });
+      var(new { ConstantSettings.AnimatedSnapshotFilenameFormat });
       var(new { ConstantSettings.VobsubFilenameFormat });
       var(new { ConstantSettings.AudioId3Artist });
       var(new { ConstantSettings.AudioId3Album });
