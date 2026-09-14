@@ -1,0 +1,6 @@
+{
+  "model": "claude-sonnet-5",
+  "chunkTargetLines": 200,
+  "extraInstructions": null,
+  "minBoundaryF1": 0.9
+}
