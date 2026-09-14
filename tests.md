@@ -22,6 +22,12 @@
 | `subs2srs.Tests` | `AnimatedSnapshotE2ETests.cs` | xUnit (ffmpeg + encoder) | Animated webp/avif through the whole pipeline: files, frame counts (WebP RIFF chunks, ffprobe for avif), gap removal shortens the animation, TSV column, Off, missing encoder reported |
 | `subs2srs.UiTests` | `AnimatedSnapshotUiTests.cs` | xUnit (GTK) | Snapshots-tab controls follow the encoder probe and the checkbox; Go writes animated webp |
 | `subs2srs.UiTests` | `PreviewGroupingTests.cs` | xUnit (GTK) | Preview proposes a grouping, buttons/keys/drop edit it, validation export |
+| `subs2srs.Tests` | `AiProviderTests.cs` | xUnit | Provider layer without network: prefix dispatch, key lookup with env override, retry/backoff/`Retry-After`/timeouts/cancel, request shape and recorded-response fixtures (`Fixtures/ai/*.json`) for Anthropic, OpenAI and Gemini, error text, effort fallback, schema cleanup |
+| `subs2srs.Tests` | `AiGroupingTests.cs` | xUnit | Gap-split chunker, prompt content, output schema, answer parser repairs, cache key/round trip, bulk runner (concurrency, pacing, failure isolation, cancel), `AiGrouper` end to end with `FakeChatProvider` (notes, cache, force refresh, rules fallback, cost estimate) |
+| `subs2srs.Tests` | `AiGroupingE2ETests.cs` | xUnit (ffmpeg) | AI mode through the whole pipeline with the fake provider: "AI grouping" step with *AI Grouping On Go*, rules fallback without it or on provider failure, preview joins skip the step |
+| `subs2srs.Tests` | `AiLiveTests.cs` | xUnit (live, skipped) | One real provider call; runs only with `SUBS2SRS_AI_LIVE_MODEL=<model>` and the provider's key in the environment |
+| `subs2srs.UiTests` | `PreviewAiGroupingTests.cs` | xUnit (GTK) | Preview in AI mode with the fake provider: pass on open, note tooltips, Regroup (AI), validation proposal block, provider error shown with rules fallback |
+| `subs2srs.UiTests` | `SnippetsOptionsUiTests.cs` | xUnit (GTK) | Snippets options page loads and saves the AI mode, model, lines per request and extra instructions |
 
 `[RequiresFfmpegFact]` skips a test when ffmpeg is missing; `[RequiresFfmpegEncoderFact(format)]` also when the ffmpeg found has no encoder for that animated snapshot format.
 

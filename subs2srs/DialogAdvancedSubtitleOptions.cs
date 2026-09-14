@@ -71,13 +71,14 @@ namespace subs2srs
         private Gtk.CheckButton _chkKanjiOnly;
 
         // Snippets
-        private Gtk.DropDown _dropSnippetMode;
+        internal Gtk.DropDown _dropSnippetMode;
         private Gtk.SpinButton _spinSnippetMaxSec, _spinGapKeep, _spinRulesMaxGap;
         private Gtk.CheckButton _chkGapRemoval, _chkRulesRequireCue, _chkRulesActorChange;
         private Gtk.Entry _txtSnippetSeparator, _txtRulesCueChars;
         private static readonly SnippetMode[] SnippetModes = { SnippetMode.Off, SnippetMode.Rules, SnippetMode.AI };
-        private Gtk.Entry _txtAiModel, _txtAiInstructions;
-        private Gtk.SpinButton _spinAiChunk;
+        internal Gtk.Entry _txtAiModel, _txtAiInstructions;
+        internal Gtk.SpinButton _spinAiChunk;
+        internal Gtk.Notebook _notebook;
 
         // Dialog result
         private bool? _result;
@@ -121,7 +122,7 @@ namespace subs2srs
         {
             var outerBox = Gtk.Box.New(Gtk.Orientation.Vertical, 6);
 
-            var notebook = Gtk.Notebook.New();
+            var notebook = _notebook = Gtk.Notebook.New();
             notebook.AppendPage(BuildSubsPage(1), Gtk.Label.New("Subs1 Filtering"));
             notebook.AppendPage(BuildSubsPage(2), Gtk.Label.New("Subs2 Filtering"));
             notebook.AppendPage(BuildContextPage(), Gtk.Label.New("Context"));
