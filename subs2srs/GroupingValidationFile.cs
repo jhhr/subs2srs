@@ -94,6 +94,9 @@ namespace subs2srs
       public double MaxSnippetSeconds { get; set; }
       public int GapKeepMs { get; set; }
       public int PadMs { get; set; }
+
+      public SnippetLimits ToSnippetLimits() =>
+        new SnippetLimits((int)Math.Round(MaxSnippetSeconds * 1000), GapKeepMs, PadMs);
     }
 
     public class LineInfo
