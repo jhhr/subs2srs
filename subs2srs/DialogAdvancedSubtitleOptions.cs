@@ -77,6 +77,9 @@ namespace subs2srs
         private Gtk.Entry _txtSnippetSeparator, _txtRulesCueChars;
         private static readonly SnippetMode[] SnippetModes = { SnippetMode.Off, SnippetMode.Rules, SnippetMode.AI };
         internal Gtk.Entry _txtAiModel, _txtAiInstructions;
+        internal Gtk.Label _lblAiModelHint;
+        // Looked up once per dialog: a PATH scan on every keystroke would be silly.
+        private bool? _claudeCliFound;
         internal Gtk.SpinButton _spinAiChunk;
         internal Gtk.Notebook _notebook;
 
@@ -344,9 +347,16 @@ namespace subs2srs
             gridAi.Attach(lblModel, 0, ra, 1, 1);
             _txtAiModel = Gtk.Entry.New(); _txtAiModel.SetText("claude-sonnet-5");
             _txtAiModel.SetWidthChars(24);
-            _txtAiModel.SetTooltipText("The name decides the provider: claude… (Anthropic), gpt…/o1…/o3…/o4… (OpenAI), gemini… (Google)");
+            _txtAiModel.SetTooltipText(
+                "The name decides the provider: claude… (Anthropic), gpt…/o1…/o3…/o4… (OpenAI), gemini… (Google).\n"
+                + "terminal-claude-… runs the same Claude model on your Claude subscription through the claude\n"
+                + "command line instead of the API, so it costs no API tokens (Claude Code must be installed and\n"
+                + "signed in; the path is in Preferences → AI).");
             gridAi.Attach(_txtAiModel, 1, ra, 1, 1);
-            gridAi.Attach(Gtk.Label.New("claude-…, gpt-…, gemini-…"), 2, ra, 1, 1);
+            _lblAiModelHint = Gtk.Label.New(DefaultModelHint);
+            _lblAiModelHint.SetXalign(0);
+            gridAi.Attach(_lblAiModelHint, 2, ra, 1, 1);
+            _txtAiModel.OnChanged += (_, _) => UpdateModelHint();
             ra++;
 
             var lblChunk = Gtk.Label.New("Lines per request:"); lblChunk.SetHalign(Gtk.Align.End);
@@ -367,6 +377,27 @@ namespace subs2srs
             vbox.Append(gridAi);
 
             return vbox;
+        }
+
+        private const string DefaultModelHint = "claude-…, gpt-…, gemini-…, terminal-claude-…";
+
+        /// <summary>
+        /// What the label beside the Model entry says: the usual prefixes, or, for a
+        /// <c>terminal-</c> model, whether the claude command line it needs was actually found.
+        /// </summary>
+        internal void UpdateModelHint()
+        {
+            if (_lblAiModelHint == null || _txtAiModel == null) return;
+            string model = _txtAiModel.GetText().Trim();
+            if (!ClaudeCli.IsTerminalModel(model))
+            {
+                _lblAiModelHint.SetText(DefaultModelHint);
+                return;
+            }
+            _claudeCliFound ??= !string.IsNullOrWhiteSpace(ClaudeCli.Find(ConstantSettings.ClaudeCliPath));
+            _lblAiModelHint.SetText(_claudeCliFound.Value
+                ? "runs on your Claude subscription through the claude CLI"
+                : "no claude command line found — install Claude Code or set Claude CLI Path in Preferences");
         }
 
         // ── CONTEXT ─────────────────────────────────────────────────────────
@@ -569,6 +600,7 @@ namespace subs2srs
             _chkRulesRequireCue.SetActive(sn.RulesRequireCue);
             _txtRulesCueChars.SetText(sn.RulesCueChars ?? "");
             _txtAiModel.SetText(sn.AiModel ?? "");
+            UpdateModelHint();
             _spinAiChunk.SetValue(sn.ChunkTargetLines);
             _txtAiInstructions.SetText(sn.AiExtraInstructions ?? "");
             _chkRulesActorChange.SetActive(sn.RulesJoinOnActorChange);
