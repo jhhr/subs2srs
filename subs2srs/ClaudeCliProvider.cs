@@ -253,6 +253,12 @@ namespace subs2srs
     // ── Actually running a process ───────────────────────────────────────
 
     /// <summary>
+    /// The real runner, so a live test can wrap it and record what the CLI actually printed
+    /// (<see cref="RunnerOverride"/> otherwise replaces it entirely).
+    /// </summary>
+    public static Func<CliRequest, CancellationToken, Task<CliProcessResult>> DefaultRunner => RunProcessAsync;
+
+    /// <summary>
     /// Run one request to the end. Cancelling or timing out kills the whole tree: <c>claude</c>
     /// starts children (git, cmd, conhost) that would outlive a plain kill.
     /// </summary>
