@@ -122,6 +122,95 @@ namespace subs2srs
 
 
   /// <summary>
+  /// What one attempt of an AI request produced: the answer, a retryable failure, or "send the
+  /// same request again at once" (a provider dropping an option the model rejected). A failure
+  /// nothing can be done about is thrown by the attempt itself and travels straight out of
+  /// <see cref="AiRetryLoop"/>.
+  /// </summary>
+  public sealed class AiAttempt<T>
+  {
+    public bool Ok { get; private init; }
+    public T? Value { get; private init; }
+    /// <summary>Repeat without counting an attempt (the request itself changed).</summary>
+    public bool Again { get; private init; }
+    public int? Status { get; private init; }
+    public string Message { get; private init; } = "";
+    /// <summary>How long the provider asked us to wait, when it said.</summary>
+    public TimeSpan? Hint { get; private init; }
+    /// <summary>Whether the whole model should be held back, not just this request.</summary>
+    public bool RateLimited { get; private init; }
+
+    public static AiAttempt<T> Success(T value) => new AiAttempt<T> { Ok = true, Value = value };
+
+    public static AiAttempt<T> Retryable(int? status, string message, TimeSpan? hint = null, bool rateLimited = false) =>
+      new AiAttempt<T> { Status = status, Message = message ?? "", Hint = hint, RateLimited = rateLimited };
+
+    public static AiAttempt<T> RetryNow() => new AiAttempt<T> { Again = true };
+  }
+
+
+  /// <summary>
+  /// The retry, cooldown and backoff skeleton every provider shares, a port of
+  /// <c>post_with_retry</c> from the Python reference. Pacing is driven by what the provider
+  /// answers, not by a guessed requests-per-minute ceiling: a rate-limit rejection installs a
+  /// cooldown for the model in the shared <see cref="RateLimitTracker"/> that every request to that
+  /// model waits out before sending, while a timeout, a dropped connection or a crashed process
+  /// backs off for that request only. A wait hint above <see cref="RetryPolicy.MaxRetryWait"/> gives
+  /// up at once rather than stalling the run. The attempt itself is the provider's business:
+  /// <see cref="HttpChatProvider"/> sends an HTTP request, <see cref="ClaudeCliProvider"/> runs a
+  /// process.
+  /// </summary>
+  public static class AiRetryLoop
+  {
+    /// <summary>
+    /// Run <paramref name="attempt"/> until it succeeds or gives up. It is handed the tracker's
+    /// stamp for the moment the request goes out (see <see cref="RateLimitTracker.NoteSuccess"/>)
+    /// and a token to obey.
+    /// </summary>
+    public static async Task<T> RunAsync<T>(string provider, string model, RetryPolicy retry,
+      Func<TimeSpan, CancellationToken, Task<AiAttempt<T>>> attempt, CancellationToken ct)
+    {
+      string key = RateLimitTracker.KeyFor(provider, model);
+      RateLimitTracker tracker = retry.Tracker;
+      int failed = 0; // failed sends so far
+      while (true)
+      {
+        ct.ThrowIfCancellationRequested();
+
+        // Another request may already have been rejected for this model: wait rather than spend a request on the same rejection.
+        TimeSpan cooldown = tracker.WaitTime(key);
+        if (cooldown > TimeSpan.Zero)
+        {
+          Logger.Instance.info(FormattableString.Invariant($"{provider}: waiting {cooldown.TotalSeconds:0.0} s on the cooldown for {model}"));
+          await retry.Delay(cooldown, ct).ConfigureAwait(false);
+        }
+
+        // Stamped before the request goes out: a success only says the limit has cleared if the request was sent after the cooldown went up.
+        AiAttempt<T> result = await attempt(tracker.Now, ct).ConfigureAwait(false);
+        if (result.Ok) return result.Value!;
+        if (result.Again) continue; // the request changed, so this was not an attempt at the same thing
+
+        if (failed >= retry.MaxRetries)
+          throw new ProviderException(provider, result.Status, result.Message, null, FormattableString.Invariant($"(gave up after {failed + 1} attempts)"));
+
+        // A hint of zero is not a hint: a reset that has already passed would fire every attempt back to back.
+        TimeSpan wait = result.Hint.HasValue && result.Hint.Value > TimeSpan.Zero ? result.Hint.Value : retry.BackoffFor(failed);
+        if (wait > retry.MaxRetryWait)
+          throw new ProviderException(provider, result.Status, result.Message, null, FormattableString.Invariant(
+            $"(asked to wait {wait.TotalSeconds:0} s, above the {retry.MaxRetryWait.TotalSeconds:0} s maximum)"));
+
+        Logger.Instance.info(FormattableString.Invariant(
+          $"{provider}: attempt {failed + 1} failed ({(result.Status.HasValue ? "HTTP " + result.Status.Value : "no response")}: {result.Message}); retrying in {wait.TotalSeconds:0.0} s"));
+        // Only a rate-limit rejection is worth holding the whole model back for.
+        if (result.RateLimited) tracker.NoteRateLimited(key, wait);
+        await retry.Delay(wait, ct).ConfigureAwait(false);
+        failed++;
+      }
+    }
+  }
+
+
+  /// <summary>
   /// Shared plumbing of the three raw-HTTP adapters, a port of <c>post_with_retry</c> from the
   /// Python reference: one <see cref="HttpClient"/>, a request timeout, and a retry loop driven by
   /// what the provider answers rather than a guessed requests-per-minute ceiling. Each adapter
@@ -247,131 +336,109 @@ namespace subs2srs
       return req;
     }
 
-    public async Task<ChatCompletion> CompleteJsonAsync(string system, string user, JsonElement schema, CancellationToken ct)
+    public Task<ChatCompletion> CompleteJsonAsync(string system, string user, JsonElement schema, CancellationToken ct)
     {
       if (string.IsNullOrWhiteSpace(ApiKey))
         throw new ProviderException(Name, null, $"No API key configured for {Name}. Set it in Preferences or the environment.");
 
+      var dropped = new HashSet<string>(StringComparer.Ordinal);
+      return AiRetryLoop.RunAsync(Name, Model, retry,
+        (sentAt, token) => SendOnceAsync(system, user, schema, dropped, sentAt, token), ct);
+    }
+
+    /// <summary>One request: send it, and say what the answer means for the retry loop.</summary>
+    private async Task<AiAttempt<ChatCompletion>> SendOnceAsync(string system, string user, JsonElement schema,
+      ISet<string> dropped, TimeSpan sentAt, CancellationToken ct)
+    {
       string key = RateLimitTracker.KeyFor(Name, Model);
       RateLimitTracker tracker = retry.Tracker;
-      var dropped = new HashSet<string>(StringComparer.Ordinal);
-      int attempt = 0; // failed sends so far
-      while (true)
+      int? status = null;
+      string message;
+      TimeSpan? hint = null;
+      bool rateLimited = false;
+
+      using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+      timeoutCts.CancelAfter(retry.RequestTimeout);
+      try
       {
-        ct.ThrowIfCancellationRequested();
+        using HttpRequestMessage request = BuildRequest(system, user, schema, dropped);
+        // Headers first: a streamed answer is then read event by event under the same timeout.
+        using HttpResponseMessage response = await client.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, timeoutCts.Token).ConfigureAwait(false);
+        status = (int)response.StatusCode;
 
-        // Another request may already have been rejected for this model: wait rather than spend a request on the same rejection.
-        TimeSpan cooldown = tracker.WaitTime(key);
-        if (cooldown > TimeSpan.Zero)
+        if (response.IsSuccessStatusCode)
         {
-          Logger.Instance.info(FormattableString.Invariant($"{Name}: waiting {cooldown.TotalSeconds:0.0} s on the cooldown for {Model}"));
-          await retry.Delay(cooldown, ct).ConfigureAwait(false);
-        }
-
-        // Stamped before the request goes out: a 200 only says the limit has cleared if the request was sent after the cooldown went up.
-        TimeSpan sentAt = tracker.Now;
-        int? status = null;
-        string message;
-        TimeSpan? hint = null;
-        bool rateLimited = false;
-
-        using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
-        timeoutCts.CancelAfter(retry.RequestTimeout);
-        try
-        {
-          using HttpRequestMessage request = BuildRequest(system, user, schema, dropped);
-          // Headers first: a streamed answer is then read event by event under the same timeout.
-          using HttpResponseMessage response = await client.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, timeoutCts.Token).ConfigureAwait(false);
-          status = (int)response.StatusCode;
-
-          if (response.IsSuccessStatusCode)
+          tracker.NoteSuccess(key, sentAt);
+          TimeSpan? hold = ProactiveHold(response.Headers, retry.UtcNow());
+          if (hold.HasValue && hold.Value > TimeSpan.Zero)
           {
-            tracker.NoteSuccess(key, sentAt);
-            TimeSpan? hold = ProactiveHold(response.Headers, retry.UtcNow());
-            if (hold.HasValue && hold.Value > TimeSpan.Zero)
-            {
-              TimeSpan h = hold.Value > retry.MaxRetryWait ? retry.MaxRetryWait : hold.Value;
-              Logger.Instance.info(FormattableString.Invariant($"{Name}: {Model} is out of quota, holding off {h.TotalSeconds:0.0} s"));
-              tracker.NoteRateLimited(key, h);
-            }
-            if (IsEventStream(response))
-            {
-              List<ServerSentEvent> events;
-              using (Stream stream = await response.Content.ReadAsStreamAsync(timeoutCts.Token).ConfigureAwait(false))
-                events = await ServerSentEvents.ReadAllAsync(stream, timeoutCts.Token).ConfigureAwait(false);
-              return ParseEventStream(events);
-            }
-            string okBody = await response.Content.ReadAsStringAsync(timeoutCts.Token).ConfigureAwait(false);
-            try
-            {
-              using JsonDocument doc = JsonDocument.Parse(okBody);
-              return ParseResponse(doc);
-            }
-            catch (JsonException ex)
-            {
-              throw new ProviderException(Name, status, "Response was not valid JSON: " + ex.Message, ex);
-            }
+            TimeSpan h = hold.Value > retry.MaxRetryWait ? retry.MaxRetryWait : hold.Value;
+            Logger.Instance.info(FormattableString.Invariant($"{Name}: {Model} is out of quota, holding off {h.TotalSeconds:0.0} s"));
+            tracker.NoteRateLimited(key, h);
           }
-
-          string body = await response.Content.ReadAsStringAsync(timeoutCts.Token).ConfigureAwait(false);
-          message = ExtractErrorMessage(body);
-          ResponseVerdict verdict = Classify(status.Value, response.Headers, body, retry.UtcNow());
-          if (verdict.Action == ResponseAction.Fail)
+          if (IsEventStream(response))
           {
-            string? drop = Degrade(status.Value, message, dropped);
-            if (drop != null && dropped.Add(drop))
-            {
-              Logger.Instance.info($"{Name}: {Model} rejected the request ({message}); retrying without \"{drop}\".");
-              continue; // does not count as a retry attempt
-            }
-            throw new ProviderException(Name, status, message);
+            List<ServerSentEvent> events;
+            using (Stream stream = await response.Content.ReadAsStreamAsync(timeoutCts.Token).ConfigureAwait(false))
+              events = await ServerSentEvents.ReadAllAsync(stream, timeoutCts.Token).ConfigureAwait(false);
+            return AiAttempt<ChatCompletion>.Success(ParseEventStream(events));
           }
-          hint = verdict.Delay;
-          rateLimited = RetryPolicy.IsRateLimitStatus(status.Value);
-        }
-        catch (StreamErrorException sx)
-        {
-          // An error event inside a 200 stream (e.g. overloaded_error): the same rules as its HTTP status.
-          status = sx.Status;
-          message = sx.ProviderMessage;
-          using var noHeaders = new HttpResponseMessage();
-          ResponseVerdict streamVerdict = Classify(sx.Status, noHeaders.Headers, sx.Body, retry.UtcNow());
-          if (streamVerdict.Action == ResponseAction.Fail)
-            throw new ProviderException(Name, sx.Status, message);
-          hint = streamVerdict.Delay;
-          rateLimited = RetryPolicy.IsRateLimitStatus(sx.Status);
-        }
-        catch (OperationCanceledException) when (ct.IsCancellationRequested)
-        {
-          throw;
-        }
-        catch (OperationCanceledException)
-        {
-          message = FormattableString.Invariant($"Request timed out after {retry.RequestTimeout.TotalSeconds:0} s");
-        }
-        catch (HttpRequestException ex)
-        {
-          message = "Connection error: " + ex.Message;
-          status = ex.StatusCode.HasValue ? (int)ex.StatusCode.Value : null;
+          string okBody = await response.Content.ReadAsStringAsync(timeoutCts.Token).ConfigureAwait(false);
+          try
+          {
+            using JsonDocument doc = JsonDocument.Parse(okBody);
+            return AiAttempt<ChatCompletion>.Success(ParseResponse(doc));
+          }
+          catch (JsonException ex)
+          {
+            throw new ProviderException(Name, status, "Response was not valid JSON: " + ex.Message, ex);
+          }
         }
 
-        // Retryable.
-        if (attempt >= retry.MaxRetries)
-          throw new ProviderException(Name, status, message, null, FormattableString.Invariant($"(gave up after {attempt + 1} attempts)"));
-
-        // A hint of zero is not a hint: a reset that has already passed would fire every attempt back to back.
-        TimeSpan wait = hint.HasValue && hint.Value > TimeSpan.Zero ? hint.Value : retry.BackoffFor(attempt);
-        if (wait > retry.MaxRetryWait)
-          throw new ProviderException(Name, status, message, null, FormattableString.Invariant(
-            $"(asked to wait {wait.TotalSeconds:0} s, above the {retry.MaxRetryWait.TotalSeconds:0} s maximum)"));
-
-        Logger.Instance.info(FormattableString.Invariant(
-          $"{Name}: attempt {attempt + 1} failed ({(status.HasValue ? "HTTP " + status.Value : "no response")}: {message}); retrying in {wait.TotalSeconds:0.0} s"));
-        // Only a rate-limit rejection is worth holding the whole model back for; a timeout, a dropped connection or a 500 is this request's problem.
-        if (rateLimited) tracker.NoteRateLimited(key, wait);
-        await retry.Delay(wait, ct).ConfigureAwait(false);
-        attempt++;
+        string body = await response.Content.ReadAsStringAsync(timeoutCts.Token).ConfigureAwait(false);
+        message = ExtractErrorMessage(body);
+        ResponseVerdict verdict = Classify(status.Value, response.Headers, body, retry.UtcNow());
+        if (verdict.Action == ResponseAction.Fail)
+        {
+          string? drop = Degrade(status.Value, message, dropped);
+          if (drop != null && dropped.Add(drop))
+          {
+            Logger.Instance.info($"{Name}: {Model} rejected the request ({message}); retrying without \"{drop}\".");
+            return AiAttempt<ChatCompletion>.RetryNow(); // does not count as a retry attempt
+          }
+          throw new ProviderException(Name, status, message);
+        }
+        hint = verdict.Delay;
+        rateLimited = RetryPolicy.IsRateLimitStatus(status.Value);
       }
+      catch (StreamErrorException sx)
+      {
+        // An error event inside a 200 stream (e.g. overloaded_error): the same rules as its HTTP status.
+        status = sx.Status;
+        message = sx.ProviderMessage;
+        using var noHeaders = new HttpResponseMessage();
+        ResponseVerdict streamVerdict = Classify(sx.Status, noHeaders.Headers, sx.Body, retry.UtcNow());
+        if (streamVerdict.Action == ResponseAction.Fail)
+          throw new ProviderException(Name, sx.Status, message);
+        hint = streamVerdict.Delay;
+        rateLimited = RetryPolicy.IsRateLimitStatus(sx.Status);
+      }
+      catch (OperationCanceledException) when (ct.IsCancellationRequested)
+      {
+        throw;
+      }
+      catch (OperationCanceledException)
+      {
+        message = FormattableString.Invariant($"Request timed out after {retry.RequestTimeout.TotalSeconds:0} s");
+      }
+      catch (HttpRequestException ex)
+      {
+        message = "Connection error: " + ex.Message;
+        status = ex.StatusCode.HasValue ? (int)ex.StatusCode.Value : null;
+      }
+
+      // A timeout, a dropped connection or a 500 is this request's problem; only a rate-limit rejection holds the model back.
+      return AiAttempt<ChatCompletion>.Retryable(status, message, hint, rateLimited);
     }
 
     /// <summary>Read an int property that may be missing or null.</summary>
