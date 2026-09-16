@@ -121,7 +121,10 @@ namespace subs2srs
     // Key bindings are GTK accelerator names, several separated by spaces.
     public const string GroupingKeyAttachAbove = "<Control>Up w";
     public const string GroupingKeyAttachBelow = "<Control>Down s";
-    public const string GroupingKeyDetach = "<Control>BackSpace x";
+    public const string GroupingKeyDetach = "<Control>BackSpace BackSpace x";
+
+    /// <summary>The detach default before plain BackSpace was added; saved preferences holding it are upgraded.</summary>
+    public const string OldGroupingKeyDetach = "<Control>BackSpace x";
 
     // ── AI grouping ──
     // API keys live in preferences.json; the environment variables ANTHROPIC_API_KEY,

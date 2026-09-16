@@ -776,7 +776,9 @@ namespace subs2srs
             // grouping_key_attach_above
             propTable.Properties.Add(new PropertySpec("Key: Attach Above", typeof(string),
                 "Snippets",
-                "Preview shortcut that attaches the selected line to the line above it.\n\n"
+                "Preview shortcut that attaches the selected line to the line above it. "
+                + "When the line is already attached above, the same key detaches it from that line only "
+                + "and keeps its attachment below.\n\n"
                 + "GTK accelerator names separated by spaces, e.g. \"<Control>Up w\".",
                 PrefDefaults.GroupingKeyAttachAbove));
             propTable["Key: Attach Above"] = ConstantSettings.GroupingKeyAttachAbove;
@@ -784,7 +786,9 @@ namespace subs2srs
             // grouping_key_attach_below
             propTable.Properties.Add(new PropertySpec("Key: Attach Below", typeof(string),
                 "Snippets",
-                "Preview shortcut that attaches the selected line to the line below it.\n\n"
+                "Preview shortcut that attaches the selected line to the line below it. "
+                + "When the line is already attached below, the same key detaches it from that line only "
+                + "and keeps its attachment above.\n\n"
                 + "GTK accelerator names separated by spaces, e.g. \"<Control>Down s\".",
                 PrefDefaults.GroupingKeyAttachBelow));
             propTable["Key: Attach Below"] = ConstantSettings.GroupingKeyAttachBelow;
@@ -793,7 +797,7 @@ namespace subs2srs
             propTable.Properties.Add(new PropertySpec("Key: Detach", typeof(string),
                 "Snippets",
                 "Preview shortcut that makes the selected line a card of its own.\n\n"
-                + "GTK accelerator names separated by spaces, e.g. \"<Control>BackSpace x\".",
+                + "GTK accelerator names separated by spaces, e.g. \"<Control>BackSpace BackSpace x\".",
                 PrefDefaults.GroupingKeyDetach));
             propTable["Key: Detach"] = ConstantSettings.GroupingKeyDetach;
 

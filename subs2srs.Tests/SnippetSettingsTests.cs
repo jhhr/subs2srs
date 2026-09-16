@@ -82,7 +82,7 @@ namespace subs2srs.Tests
             Assert.Equal("", p.ValidationDir);
             Assert.Equal("<Control>Up w", p.GroupingKeyAttachAbove);
             Assert.Equal("<Control>Down s", p.GroupingKeyAttachBelow);
-            Assert.Equal("<Control>BackSpace x", p.GroupingKeyDetach);
+            Assert.Equal("<Control>BackSpace BackSpace x", p.GroupingKeyDetach);
         }
     }
 }

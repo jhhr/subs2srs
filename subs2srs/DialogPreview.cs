@@ -95,6 +95,15 @@ namespace subs2srs
         private GroupingEditor _editor;
         private int _editorEp = -1;
         private List<KeyBinding> _keysAbove = new(), _keysBelow = new(), _keysDetach = new();
+        private Gtk.Button _btnAbove, _btnBelow;
+
+        /// <summary>
+        /// Every cell widget the list factories set up, with its bind function, so
+        /// that a grouping or activation change can re-bind the visible rows in
+        /// place. Rebuilding the model instead resets the scroll position and
+        /// destroys the focused row.
+        /// </summary>
+        private readonly List<(Gtk.ListItem item, Action<Gtk.ListItem> bind)> _cells = new();
         private readonly Dictionary<string, uint> _keyvalCache = new();
 
         /// <summary>Whether this window has been destroyed or hidden permanently.</summary>
@@ -252,8 +261,12 @@ namespace subs2srs
             _columnView.AppendColumn(colDur);
 
             // Keyboard shortcuts for the grouping actions (only while the list has focus,
-            // so single-letter bindings never fire inside the text entries).
+            // so single-letter bindings never fire inside the text entries). Capture
+            // phase: GTK's list binds Up/Down with every modifier (Ctrl included) and
+            // would consume <Control>Up/<Control>Down before a bubble-phase handler.
+            // Unmatched keys return false and still reach the list's own navigation.
             var keys = Gtk.EventControllerKey.New();
+            keys.SetPropagationPhase(Gtk.PropagationPhase.Capture);
             keys.OnKeyPressed += (c, a) => OnListKeyPressed(a.Keyval, a.State);
             _columnView.AddController(keys);
 
@@ -341,12 +354,12 @@ namespace subs2srs
             // Action buttons row 2: snippet grouping
             var ab3 = _rowActions3 = Gtk.Box.New(Gtk.Orientation.Horizontal, 4);
             ab3.Append(Gtk.Label.New("Snippet:"));
-            var bAbove = Gtk.Button.NewWithLabel("Attach ↑");
-            bAbove.SetTooltipText("Attach the selected line to the line above (drag it up, or use the key from Preferences)");
+            var bAbove = _btnAbove = Gtk.Button.NewWithLabel(AboveLabel(false));
+            bAbove.SetTooltipText(AboveTooltip(false));
             bAbove.OnClicked += (s, e) => ApplyToSelected(JoinAction.AttachAbove);
             ab3.Append(bAbove);
-            var bBelow = Gtk.Button.NewWithLabel("Attach ↓");
-            bBelow.SetTooltipText("Attach the selected line to the line below (drag it down, or use the key from Preferences)");
+            var bBelow = _btnBelow = Gtk.Button.NewWithLabel(BelowLabel(false));
+            bBelow.SetTooltipText(BelowTooltip(false));
             bBelow.OnClicked += (s, e) => ApplyToSelected(JoinAction.AttachBelow);
             ab3.Append(bBelow);
             var bDetach = Gtk.Button.NewWithLabel("Detach");
@@ -559,11 +572,14 @@ namespace subs2srs
                 box.Append(lbl);
                 listItem.SetChild(box);
                 AttachRowDragAndDrop(box, listItem);
+                _cells.Add((listItem, bind));
             };
 
-            factory.OnBind += (f, args) =>
+            factory.OnTeardown += (f, args) => ForgetCell((Gtk.ListItem)args.Object);
+            factory.OnBind += (f, args) => bind((Gtk.ListItem)args.Object);
+
+            void bind(Gtk.ListItem listItem)
             {
-                var listItem = (Gtk.ListItem)args.Object;
                 uint pos = listItem.GetPosition();
                 if (pos >= _items.Count) return;
 
@@ -584,7 +600,7 @@ namespace subs2srs
                 lbl.SetText(textSelector(item));
                 if (groupColumn)
                     box.SetTooltipText(string.IsNullOrEmpty(item.GroupNote) ? null : item.GroupNote);
-            };
+            }
 
             var col = Gtk.ColumnViewColumn.New(title, factory);
 
@@ -621,11 +637,14 @@ namespace subs2srs
                 box.Append(lbl);
                 listItem.SetChild(box);
                 AttachRowDragAndDrop(box, listItem);
+                _cells.Add((listItem, bind));
             };
 
-            factory.OnBind += (f, args) =>
+            factory.OnTeardown += (f, args) => ForgetCell((Gtk.ListItem)args.Object);
+            factory.OnBind += (f, args) => bind((Gtk.ListItem)args.Object);
+
+            void bind(Gtk.ListItem listItem)
             {
-                var listItem = (Gtk.ListItem)args.Object;
                 uint pos = listItem.GetPosition();
                 if (pos >= _items.Count) return;
 
@@ -639,7 +658,7 @@ namespace subs2srs
 
                 var lbl = (Gtk.Label)box.GetFirstChild();
                 lbl.SetText(textSelector(item));
-            };
+            }
 
             var col = Gtk.ColumnViewColumn.New(title, factory);
 
@@ -1070,6 +1089,9 @@ namespace subs2srs
 
         // ── SELECTION ───────────────────────────────────────────────────────
 
+        /// <summary>Selected row position for tests, or -1.</summary>
+        internal int SelectedRowForTests => SelectedPosition();
+
         /// <summary>Row position of the last-clicked selected row, or -1.</summary>
         private int SelectedPosition()
         {
@@ -1082,6 +1104,7 @@ namespace subs2srs
         private void OnSelChanged()
         {
             if (_guard) return;
+            UpdateGroupingButtons();
 
             // Show detail for the last item in the selection bitset
             int pos = SelectedPosition();
@@ -1226,7 +1249,18 @@ namespace subs2srs
             JoinResult result = _editor.Apply(idx, action);
             ShowGroupStatus(result.Message, result.Ok);
             if (result.Changed) AfterGroupingChange();
+            FocusRow(pos);
             return result;
+        }
+
+        /// <summary>
+        /// Give keyboard focus back to the row after a button click or a drop, so the
+        /// grouping keys keep working. The row is already visible, so nothing scrolls.
+        /// </summary>
+        private void FocusRow(int pos)
+        {
+            if (pos < 0 || pos >= _store.GetNItems()) return;
+            try { _columnView.ScrollTo((uint)pos, null, Gtk.ListScrollFlags.Focus, null); } catch { }
         }
 
         /// <summary>Redraw the grouping after the editor changed (action, undo, redo, regroup).</summary>
@@ -1258,7 +1292,53 @@ namespace subs2srs
             int ep = _comboEp != null ? (int)_comboEp.GetSelected() : -1;
             _btnNextDiff?.SetSensitive(_editor != null && _wv?.ProposedJoins != null
                 && ep >= 0 && ep < _wv.ProposedJoins.Count);
+
+            // Attach ↑/↓ turn into Detach ↑/↓ on the side where the selected line is attached
+            int pos = _store != null ? SelectedPosition() : -1;
+            int idx = pos >= 0 ? _items[pos].Index : -1;
+            bool up = _editor != null && idx >= 0 && _editor.IsJoinedAbove(idx);
+            bool down = _editor != null && idx >= 0 && _editor.IsJoinedBelow(idx);
+            if (_btnAbove != null && _btnAbove.GetLabel() != AboveLabel(up))
+            {
+                _btnAbove.SetLabel(AboveLabel(up));
+                _btnAbove.SetTooltipText(AboveTooltip(up));
+            }
+            if (_btnBelow != null && _btnBelow.GetLabel() != BelowLabel(down))
+            {
+                _btnBelow.SetLabel(BelowLabel(down));
+                _btnBelow.SetTooltipText(BelowTooltip(down));
+            }
         }
+
+        private static string AboveLabel(bool attached) => attached ? "Detach ↑" : "Attach ↑";
+        private static string BelowLabel(bool attached) => attached ? "Detach ↓" : "Attach ↓";
+
+        private static string AboveTooltip(bool attached) => attached
+            ? "Detach the selected line from the line above, keeping its attachment below (drag it up, or use the Attach Above key)"
+            : "Attach the selected line to the line above (drag it up, or use the key from Preferences)";
+
+        private static string BelowTooltip(bool attached) => attached
+            ? "Detach the selected line from the line below, keeping its attachment above (drag it down, or use the Attach Below key)"
+            : "Attach the selected line to the line below (drag it down, or use the key from Preferences)";
+
+        /// <summary>Labels of the two attach buttons, for tests.</summary>
+        internal (string above, string below) AttachButtonLabelsForTests =>
+            (_btnAbove?.GetLabel() ?? "", _btnBelow?.GetLabel() ?? "");
+
+        /// <summary>The grouping status line under the action buttons, for tests.</summary>
+        internal string GroupStatusTextForTests => _lblGroupStatus?.GetText() ?? "";
+
+        /// <summary>What the Undo button does, for tests.</summary>
+        internal bool UndoForTests()
+        {
+            if (_editor == null || !_editor.Undo()) return false;
+            AfterGroupingChange();
+            return true;
+        }
+
+        /// <summary>The list's vertical scroll position, for tests.</summary>
+        internal double ListScrollValueForTests =>
+            (_columnView?.GetParent() as Gtk.ScrolledWindow)?.GetVadjustment()?.GetValue() ?? -1;
 
         internal void SelectRow(int pos)
         {
@@ -1463,20 +1543,9 @@ namespace subs2srs
             _editor?.RefreshKept();
             ComputeGroupTexts();
 
-            // Refresh rows to update CSS classes, preserve selection
-            _guard = true;
-            var savedBitset = Gtk.Bitset.NewEmpty();
-            foreach (uint pos in positions)
-                savedBitset.Add(pos);
-
-            uint count = _store.GetNItems();
-            _store.RemoveAll();
-            for (uint i = 0; i < count; i++)
-                _store.Append(Gtk.StringObject.New(""));
-
-            // Restore multi-selection
-            _selection.SetSelection(savedBitset, savedBitset);
-            _guard = false;
+            // Re-bind the rows in place (CSS classes, group column); selection and scroll stay
+            RefreshAllRows();
+            UpdateGroupingButtons();
 
             UpdateStats();
             _changed = true;
@@ -1537,33 +1606,30 @@ namespace subs2srs
         }
 
         /// <summary>
-        /// Rebuild the dummy ListStore so that all rows re-bind with updated CSS classes.
-        /// Preserves the current multi-selection.
+        /// Re-bind every row widget in place so it shows the current texts, band and
+        /// CSS classes. The model is left untouched, so the scroll position, the
+        /// selection and the focused row all survive (replacing the model's items
+        /// scrolled the list back to the top after every edit).
         /// </summary>
         private void RefreshAllRows()
         {
             _guard = true;
-            uint count = _store.GetNItems();
-
-            // Save current selection bitset
-            var oldSel = _selection.GetSelection();
-            var saveBitset = Gtk.Bitset.NewEmpty();
-            if (oldSel != null)
+            try
             {
-                uint sz = (uint)oldSel.GetSize();
-                for (uint n = 0; n < sz; n++)
-                    saveBitset.Add(oldSel.GetNth(n));
+                foreach (var (item, bind) in _cells.ToArray())
+                {
+                    if (item.GetItem() != null) bind(item);
+                }
             }
+            finally
+            {
+                _guard = false;
+            }
+        }
 
-            _store.RemoveAll();
-            for (uint i = 0; i < count; i++)
-                _store.Append(Gtk.StringObject.New(""));
-
-            // Restore selection
-            if (saveBitset.GetSize() > 0)
-                _selection.SetSelection(saveBitset, saveBitset);
-
-            _guard = false;
+        private void ForgetCell(Gtk.ListItem item)
+        {
+            _cells.RemoveAll(c => ReferenceEquals(c.item, item));
         }
 
         // ── FIND ────────────────────────────────────────────────────────────

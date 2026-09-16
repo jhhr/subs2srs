@@ -24,8 +24,13 @@ namespace subs2srs
 {
   public enum JoinAction
   {
+    /// <summary>Attach to the kept line above; when already attached above, detach from it only.</summary>
     AttachAbove,
+
+    /// <summary>Attach to the kept line below; when already attached below, detach from it only.</summary>
     AttachBelow,
+
+    /// <summary>Detach from both neighbours.</summary>
     Detach
   }
 
@@ -163,10 +168,12 @@ namespace subs2srs
       {
         case JoinAction.AttachAbove:
           if (k == 0) return JoinResult.NoOp("No active line above.");
+          if (_joins[_kept[k - 1]]) return detachSlot(k - 1, "Detached from the line above.");
           return tryJoin(k - 1, "above");
 
         case JoinAction.AttachBelow:
           if (k >= _kept.Length - 1) return JoinResult.NoOp("No active line below.");
+          if (_joins[_kept[k]]) return detachSlot(k, "Detached from the line below.");
           return tryJoin(k, "below");
 
         case JoinAction.Detach:
@@ -228,6 +235,15 @@ namespace subs2srs
     }
 
     // ── internals ───────────────────────────────────────────────────────
+
+    /// <summary>Clear the join between kept positions k and k + 1 (a split never breaks a limit).</summary>
+    private JoinResult detachSlot(int k, string message)
+    {
+      pushUndo();
+      _joins[_kept[k]] = false;
+      Changed?.Invoke();
+      return JoinResult.Applied(message);
+    }
 
     /// <summary>Set keptJoins[k] = true if the resulting snippet fits the limit.</summary>
     private JoinResult tryJoin(int k, string direction)

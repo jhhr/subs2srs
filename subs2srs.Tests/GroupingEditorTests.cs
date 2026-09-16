@@ -57,6 +57,61 @@ namespace subs2srs.Tests
         }
 
         [Fact]
+        public void AttachAbove_WhenAlreadyAttachedAbove_DetachesTheUpperNeighbourOnly()
+        {
+            var ed = Editor();
+            ed.SetJoins(new[] { true, true, true, false }); // all four lines in one snippet
+
+            var r = ed.Apply(1, JoinAction.AttachAbove);
+
+            Assert.True(r.Ok);
+            Assert.True(r.Changed);
+            Assert.Equal("Detached from the line above.", r.Message);
+            Assert.Equal(new[] { false, true, true, false }, ed.Joins); // lower attachment kept
+            Assert.False(ed.IsJoinedAbove(1));
+            Assert.True(ed.IsJoinedBelow(1));
+
+            // pressing it again attaches again
+            var again = ed.Apply(1, JoinAction.AttachAbove);
+            Assert.True(again.Changed);
+            Assert.StartsWith("Attached above", again.Message);
+            Assert.True(ed.IsJoinedAbove(1));
+
+            Assert.True(ed.Undo());
+            Assert.Equal(new[] { false, true, true, false }, ed.Joins);
+            Assert.True(ed.Undo());
+            Assert.Equal(new[] { true, true, true, false }, ed.Joins);
+        }
+
+        [Fact]
+        public void AttachBelow_WhenAlreadyAttachedBelow_DetachesTheLowerNeighbourOnly()
+        {
+            var ed = Editor();
+            ed.SetJoins(new[] { true, true, true, false });
+
+            var r = ed.Apply(2, JoinAction.AttachBelow);
+
+            Assert.True(r.Changed);
+            Assert.Equal("Detached from the line below.", r.Message);
+            Assert.Equal(new[] { true, true, false, false }, ed.Joins); // upper attachment kept
+            Assert.True(ed.IsJoinedAbove(2));
+            Assert.False(ed.IsJoinedBelow(2));
+        }
+
+        [Fact]
+        public void AttachToggle_SkipsOmittedLinesLikeAttach()
+        {
+            var lines = SnippetGroupingTests.Dialogue();
+            lines[1].Active = false;
+            var ed = Editor(lines);
+            Assert.True(ed.Apply(2, JoinAction.AttachAbove).Changed); // attaches to line 0, the kept line above
+            Assert.True(ed.IsJoinedAbove(2));
+            var r = ed.Apply(2, JoinAction.AttachAbove);
+            Assert.Equal("Detached from the line above.", r.Message);
+            Assert.False(ed.IsJoinedAbove(2));
+        }
+
+        [Fact]
         public void Attach_IsRejectedWhenTheSnippetWouldExceedTheLimit()
         {
             var lines = new List<InfoCombined>

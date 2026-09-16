@@ -42,6 +42,19 @@ namespace subs2srs.Tests
         // ── Write creates a file ────────────────────────────────────────
 
         [Fact]
+        public void UpgradeDefaults_ReplacesTheOldDetachDefault_ButKeepsCustomKeys()
+        {
+            var prefs = new PreferencesData { GroupingKeyDetach = PrefDefaults.OldGroupingKeyDetach };
+            PrefIO.UpgradeDefaults(prefs);
+            Assert.Equal(PrefDefaults.GroupingKeyDetach, prefs.GroupingKeyDetach);
+            Assert.Contains(" BackSpace ", " " + prefs.GroupingKeyDetach + " ");
+
+            var custom = new PreferencesData { GroupingKeyDetach = "<Control>d" };
+            PrefIO.UpgradeDefaults(custom);
+            Assert.Equal("<Control>d", custom.GroupingKeyDetach);
+        }
+
+        [Fact]
         public void Write_CreatesJsonFile()
         {
             ConstantSettings.Prefs = new PreferencesData();

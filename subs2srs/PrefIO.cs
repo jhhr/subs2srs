@@ -72,12 +72,23 @@ namespace subs2srs
                 ConstantSettings.Prefs =
                     JsonSerializer.Deserialize<PreferencesData>(json, Opts)
                     ?? new PreferencesData();
+                UpgradeDefaults(ConstantSettings.Prefs);
             }
             catch (Exception ex)
             {
                 Console.Error.WriteLine($"Warning: failed to read preferences: {ex.Message}");
                 ConstantSettings.Prefs = new PreferencesData();
             }
+        }
+
+        /// <summary>
+        /// Replace values that are still an earlier build's default with the current
+        /// default (a changed value the user typed is left alone).
+        /// </summary>
+        public static void UpgradeDefaults(PreferencesData prefs)
+        {
+            if (prefs.GroupingKeyDetach == PrefDefaults.OldGroupingKeyDetach)
+                prefs.GroupingKeyDetach = PrefDefaults.GroupingKeyDetach;
         }
 
         /// <summary>
