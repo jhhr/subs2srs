@@ -89,6 +89,8 @@ namespace subs2srs
         {
             if (prefs.GroupingKeyDetach == PrefDefaults.OldGroupingKeyDetach)
                 prefs.GroupingKeyDetach = PrefDefaults.GroupingKeyDetach;
+            if (prefs.AiRequestTimeoutSeconds == PrefDefaults.OldAiRequestTimeoutSeconds)
+                prefs.AiRequestTimeoutSeconds = PrefDefaults.AiRequestTimeoutSeconds;
         }
 
         /// <summary>

@@ -55,6 +55,18 @@ namespace subs2srs.Tests
         }
 
         [Fact]
+        public void UpgradeDefaults_RaisesTheOldRequestTimeout_ButKeepsACustomOne()
+        {
+            var prefs = new PreferencesData { AiRequestTimeoutSeconds = PrefDefaults.OldAiRequestTimeoutSeconds };
+            PrefIO.UpgradeDefaults(prefs);
+            Assert.Equal(600, prefs.AiRequestTimeoutSeconds);
+
+            var custom = new PreferencesData { AiRequestTimeoutSeconds = 300 };
+            PrefIO.UpgradeDefaults(custom);
+            Assert.Equal(300, custom.AiRequestTimeoutSeconds);
+        }
+
+        [Fact]
         public void Write_CreatesJsonFile()
         {
             ConstantSettings.Prefs = new PreferencesData();

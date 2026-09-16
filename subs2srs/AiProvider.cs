@@ -1,4 +1,5 @@
 using System;
+using System.IO;
 using System.Collections.Generic;
 using System.Globalization;
 using System.Net;
@@ -76,8 +77,12 @@ namespace subs2srs
     public int MaxRetries { get; set; } = 5;
     /// <summary>A provider hint above this gives up at once instead of blocking the run; also caps a proactive hold.</summary>
     public TimeSpan MaxRetryWait { get; set; } = TimeSpan.FromSeconds(120);
-    /// <summary>Per-request timeout; a timed-out request counts as a retryable failure of this request only.</summary>
-    public TimeSpan RequestTimeout { get; set; } = TimeSpan.FromSeconds(120);
+    /// <summary>
+    /// Per-request timeout, covering the whole answer (a streamed one included); a timed-out request
+    /// counts as a retryable failure of this request only. 600 s like the official SDKs: a model that
+    /// thinks before a long answer can take minutes.
+    /// </summary>
+    public TimeSpan RequestTimeout { get; set; } = TimeSpan.FromSeconds(600);
     /// <summary>Backoff without a hint: min(<see cref="MaxBackoff"/>, BaseDelay · 2^attempt) + U(0, <see cref="Jitter"/>).</summary>
     public TimeSpan BaseDelay { get; set; } = TimeSpan.FromSeconds(1);
     public TimeSpan MaxBackoff { get; set; } = TimeSpan.FromSeconds(60);
@@ -169,6 +174,17 @@ namespace subs2srs
 
     /// <summary>Extract the completion from a 200 body.</summary>
     protected abstract ChatCompletion ParseResponse(JsonDocument body);
+
+    /// <summary>
+    /// Assemble the completion from a streamed 200 answer (server-sent events). Only adapters that
+    /// ask for a stream override it; a JSON answer always goes to <see cref="ParseResponse"/>.
+    /// Throw <see cref="StreamErrorException"/> for an error event inside the stream.
+    /// </summary>
+    protected virtual ChatCompletion ParseEventStream(IReadOnlyList<ServerSentEvent> events) =>
+      throw new ProviderException(Name, 200, "Unexpected event stream in the response.");
+
+    private static bool IsEventStream(HttpResponseMessage response) =>
+      string.Equals(response.Content.Headers.ContentType?.MediaType, "text/event-stream", StringComparison.OrdinalIgnoreCase);
 
     /// <summary>Decide what to do with a non-success response: retry (with the provider's wait hint, if any) or fail for good.</summary>
     protected abstract ResponseVerdict Classify(int status, HttpResponseHeaders headers, string body, DateTimeOffset now);
@@ -264,8 +280,8 @@ namespace subs2srs
         try
         {
           using HttpRequestMessage request = BuildRequest(system, user, schema, dropped);
-          using HttpResponseMessage response = await client.SendAsync(request, HttpCompletionOption.ResponseContentRead, timeoutCts.Token).ConfigureAwait(false);
-          string body = await response.Content.ReadAsStringAsync(timeoutCts.Token).ConfigureAwait(false);
+          // Headers first: a streamed answer is then read event by event under the same timeout.
+          using HttpResponseMessage response = await client.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, timeoutCts.Token).ConfigureAwait(false);
           status = (int)response.StatusCode;
 
           if (response.IsSuccessStatusCode)
@@ -278,9 +294,17 @@ namespace subs2srs
               Logger.Instance.info(FormattableString.Invariant($"{Name}: {Model} is out of quota, holding off {h.TotalSeconds:0.0} s"));
               tracker.NoteRateLimited(key, h);
             }
+            if (IsEventStream(response))
+            {
+              List<ServerSentEvent> events;
+              using (Stream stream = await response.Content.ReadAsStreamAsync(timeoutCts.Token).ConfigureAwait(false))
+                events = await ServerSentEvents.ReadAllAsync(stream, timeoutCts.Token).ConfigureAwait(false);
+              return ParseEventStream(events);
+            }
+            string okBody = await response.Content.ReadAsStringAsync(timeoutCts.Token).ConfigureAwait(false);
             try
             {
-              using JsonDocument doc = JsonDocument.Parse(body);
+              using JsonDocument doc = JsonDocument.Parse(okBody);
               return ParseResponse(doc);
             }
             catch (JsonException ex)
@@ -289,6 +313,7 @@ namespace subs2srs
             }
           }
 
+          string body = await response.Content.ReadAsStringAsync(timeoutCts.Token).ConfigureAwait(false);
           message = ExtractErrorMessage(body);
           ResponseVerdict verdict = Classify(status.Value, response.Headers, body, retry.UtcNow());
           if (verdict.Action == ResponseAction.Fail)
@@ -303,6 +328,18 @@ namespace subs2srs
           }
           hint = verdict.Delay;
           rateLimited = RetryPolicy.IsRateLimitStatus(status.Value);
+        }
+        catch (StreamErrorException sx)
+        {
+          // An error event inside a 200 stream (e.g. overloaded_error): the same rules as its HTTP status.
+          status = sx.Status;
+          message = sx.ProviderMessage;
+          using var noHeaders = new HttpResponseMessage();
+          ResponseVerdict streamVerdict = Classify(sx.Status, noHeaders.Headers, sx.Body, retry.UtcNow());
+          if (streamVerdict.Action == ResponseAction.Fail)
+            throw new ProviderException(Name, sx.Status, message);
+          hint = streamVerdict.Delay;
+          rateLimited = RetryPolicy.IsRateLimitStatus(sx.Status);
         }
         catch (OperationCanceledException) when (ct.IsCancellationRequested)
         {
@@ -350,6 +387,81 @@ namespace subs2srs
       if (obj.ValueKind == JsonValueKind.Object && obj.TryGetProperty(name, out JsonElement v) && v.ValueKind == JsonValueKind.String)
         return v.GetString() ?? "";
       return "";
+    }
+  }
+
+
+  /// <summary>One server-sent event: the <c>event:</c> name (empty when absent) and the joined <c>data:</c> lines.</summary>
+  public readonly struct ServerSentEvent
+  {
+    public string Event { get; }
+    public string Data { get; }
+
+    public ServerSentEvent(string evt, string data)
+    {
+      Event = evt ?? "";
+      Data = data ?? "";
+    }
+  }
+
+  /// <summary>Reads a <c>text/event-stream</c> body into events (field lines, blank-line dispatch, comments skipped).</summary>
+  public static class ServerSentEvents
+  {
+    public static async Task<List<ServerSentEvent>> ReadAllAsync(Stream stream, CancellationToken ct)
+    {
+      var events = new List<ServerSentEvent>();
+      using var reader = new StreamReader(stream, Encoding.UTF8);
+      string evt = "";
+      var data = new StringBuilder();
+      bool hasData = false;
+
+      void Dispatch()
+      {
+        if (hasData || evt.Length > 0) events.Add(new ServerSentEvent(evt, data.ToString()));
+        evt = "";
+        data.Clear();
+        hasData = false;
+      }
+
+      while (true)
+      {
+        string? line = await reader.ReadLineAsync(ct).ConfigureAwait(false);
+        if (line == null) break;
+        if (line.Length == 0) { Dispatch(); continue; }
+        if (line[0] == ':') continue; // comment / keep-alive
+        int colon = line.IndexOf(':');
+        string field = colon < 0 ? line : line.Substring(0, colon);
+        string value = colon < 0 ? "" : line.Substring(colon + 1);
+        if (value.StartsWith(' ')) value = value.Substring(1);
+        if (field == "event") evt = value;
+        else if (field == "data")
+        {
+          if (hasData) data.Append('\n');
+          data.Append(value);
+          hasData = true;
+        }
+      }
+      Dispatch();
+      return events;
+    }
+  }
+
+  /// <summary>
+  /// An error event inside a streamed 200 answer. <see cref="Status"/> is the HTTP status the same
+  /// error has in a non-streaming response, so the retry loop can apply the same rules.
+  /// </summary>
+  public sealed class StreamErrorException : Exception
+  {
+    public int Status { get; }
+    public string Body { get; }
+    public string ProviderMessage { get; }
+
+    public StreamErrorException(int status, string body, string providerMessage)
+      : base(providerMessage)
+    {
+      Status = status;
+      Body = body ?? "";
+      ProviderMessage = providerMessage ?? "";
     }
   }
 

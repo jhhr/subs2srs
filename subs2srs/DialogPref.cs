@@ -851,7 +851,8 @@ namespace subs2srs
 
             propTable.Properties.Add(new PropertySpec("AI Request Timeout Seconds", typeof(int),
                 "AI",
-                "How long one request may take before it counts as failed and is retried.\n\n"
+                "How long one request may take, a streamed answer included, before it counts as failed "
+                + "and is retried. A model that thinks before a long answer can take several minutes.\n\n"
                 + "Range: 10-3600.",
                 PrefDefaults.AiRequestTimeoutSeconds));
             propTable["AI Request Timeout Seconds"] = ConstantSettings.AiRequestTimeoutSeconds;

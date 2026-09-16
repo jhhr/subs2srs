@@ -136,7 +136,10 @@ namespace subs2srs
     public const int AiMaxConcurrentRequests = 0; // 0 = auto (AiBulkRunner.AutoConcurrency)
     public const int AiMaxRetries = 5;
     public const int AiMaxRetryWaitSeconds = 120;
-    public const int AiRequestTimeoutSeconds = 120;
+    public const int AiRequestTimeoutSeconds = 600;
+
+    /// <summary>The request timeout default before streamed answers; saved preferences holding it are upgraded.</summary>
+    public const int OldAiRequestTimeoutSeconds = 120;
     public const string AiCacheDir = ""; // "" = <LocalApplicationData>/subs2srs/ai-cache
     public const bool AiGroupingOnGo = false;
   }

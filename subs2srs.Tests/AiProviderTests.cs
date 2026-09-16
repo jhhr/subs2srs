@@ -42,6 +42,16 @@ namespace subs2srs.Tests
       return this;
     }
 
+    /// <summary>A 200 with a <c>text/event-stream</c> body.</summary>
+    public ScriptedHandler ReplySse(string body)
+    {
+      Script.Enqueue(_ => new HttpResponseMessage(HttpStatusCode.OK)
+      {
+        Content = new StringContent(body, System.Text.Encoding.UTF8, "text/event-stream")
+      });
+      return this;
+    }
+
     public ScriptedHandler Throw(Exception ex)
     {
       Script.Enqueue(_ => throw ex);
@@ -282,6 +292,8 @@ namespace subs2srs.Tests
       Assert.Equal("object", root.GetProperty("output_config").GetProperty("format").GetProperty("schema").GetProperty("type").GetString());
       Assert.Equal("medium", root.GetProperty("output_config").GetProperty("effort").GetString());
       Assert.False(root.TryGetProperty("temperature", out _));
+      Assert.True(root.GetProperty("stream").GetBoolean());
+      Assert.Equal(AnthropicProvider.TargetOutputTokens, root.GetProperty("max_tokens").GetInt32());
       Assert.DoesNotContain("secret-key", body);
 
       Assert.Equal(83, c.InputTokens);
