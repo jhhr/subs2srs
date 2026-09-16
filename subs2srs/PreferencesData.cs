@@ -175,5 +175,7 @@ namespace subs2srs
         public int AiRequestTimeoutSeconds { get; set; } = PrefDefaults.AiRequestTimeoutSeconds;
         public string AiCacheDir { get; set; } = PrefDefaults.AiCacheDir;
         public bool AiGroupingOnGo { get; set; } = PrefDefaults.AiGroupingOnGo;
+        public string ClaudeCliPath { get; set; } = PrefDefaults.ClaudeCliPath;
+        public int ClaudeCliMaxConcurrentProcesses { get; set; } = PrefDefaults.ClaudeCliMaxConcurrentProcesses;
     }
 }

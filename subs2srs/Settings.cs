@@ -142,6 +142,11 @@ namespace subs2srs
     public const int OldAiRequestTimeoutSeconds = 120;
     public const string AiCacheDir = ""; // "" = <LocalApplicationData>/subs2srs/ai-cache
     public const bool AiGroupingOnGo = false;
+    // A "terminal-claude-..." model runs through the claude command line on the user's Claude
+    // subscription instead of the Anthropic API; a process costs far more than a connection, so it
+    // has its own, much smaller cap. Empty path = find "claude" on PATH.
+    public const string ClaudeCliPath = "";
+    public const int ClaudeCliMaxConcurrentProcesses = 4;
   }
 
 
@@ -908,6 +913,20 @@ namespace subs2srs
     {
         get => Prefs.AiGroupingOnGo;
         set => Prefs.AiGroupingOnGo = value;
+    }
+
+    /// <summary>The claude executable for "terminal-" models. Empty = find "claude" on PATH.</summary>
+    public static string ClaudeCliPath
+    {
+        get => Prefs.ClaudeCliPath ?? "";
+        set => Prefs.ClaudeCliPath = value ?? "";
+    }
+
+    /// <summary>How many claude processes may run at once; each costs seconds of startup and a few hundred MB.</summary>
+    public static int ClaudeCliMaxConcurrentProcesses
+    {
+        get => Prefs.ClaudeCliMaxConcurrentProcesses;
+        set => Prefs.ClaudeCliMaxConcurrentProcesses = value;
     }
   }
 

@@ -67,6 +67,25 @@ namespace subs2srs.Tests
         }
 
         [Fact]
+        public void ClaudeCliPreferences_RoundTrip()
+        {
+            ConstantSettings.Prefs = new PreferencesData();
+            // An empty path means "find claude on PATH"; the process cap is its own, much smaller
+            // than the request cap, because a process costs CPU rather than a connection.
+            Assert.Equal("", ConstantSettings.ClaudeCliPath);
+            Assert.Equal(4, ConstantSettings.ClaudeCliMaxConcurrentProcesses);
+
+            ConstantSettings.ClaudeCliPath = @"C:\tools\claude.exe";
+            ConstantSettings.ClaudeCliMaxConcurrentProcesses = 8;
+            PrefIO.Write();
+
+            ConstantSettings.Prefs = new PreferencesData();
+            PrefIO.read();
+            Assert.Equal(@"C:\tools\claude.exe", ConstantSettings.ClaudeCliPath);
+            Assert.Equal(8, ConstantSettings.ClaudeCliMaxConcurrentProcesses);
+        }
+
+        [Fact]
         public void Write_CreatesJsonFile()
         {
             ConstantSettings.Prefs = new PreferencesData();

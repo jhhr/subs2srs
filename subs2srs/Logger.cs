@@ -326,6 +326,8 @@ namespace subs2srs
       var(new { ConstantSettings.AiRequestTimeoutSeconds });
       var(new { ConstantSettings.AiCacheDir });
       var(new { ConstantSettings.AiGroupingOnGo });
+      var(new { ConstantSettings.ClaudeCliPath });
+      var(new { ConstantSettings.ClaudeCliMaxConcurrentProcesses });
       var(new { ConstantSettings.ExeFFmpeg });
       var(new { ConstantSettings.PathFFmpegExe });
       var(new { ConstantSettings.PathFFmpegFullExe });

@@ -870,6 +870,23 @@ namespace subs2srs
                 + "Off: Go falls back to the rule-based grouper and says so in the log.",
                 PrefDefaults.AiGroupingOnGo));
             propTable["AI Grouping On Go"] = ConstantSettings.AiGroupingOnGo;
+
+            propTable.Properties.Add(new PropertySpec("Claude CLI Path", typeof(string),
+                "AI",
+                "The claude executable used by model names starting with \"terminal-\" (e.g. \"terminal-claude-sonnet-5\"),\n"
+                + "which run on your Claude subscription through Claude Code instead of the Anthropic API.\n\n"
+                + "Leave empty to use the \"claude\" found on PATH; an npm .cmd/.ps1 shim is replaced by the native\n"
+                + "binary beside it. API keys are never passed to it.",
+                PrefDefaults.ClaudeCliPath));
+            propTable["Claude CLI Path"] = ConstantSettings.ClaudeCliPath;
+
+            propTable.Properties.Add(new PropertySpec("Claude CLI Max Concurrent Processes", typeof(int),
+                "AI",
+                "How many claude processes may run at once for a \"terminal-\" model. Each costs a couple of\n"
+                + "seconds of startup and a few hundred MB, so the limit here is your CPU, not the provider.\n\n"
+                + "Range: 1-32.",
+                PrefDefaults.ClaudeCliMaxConcurrentProcesses));
+            propTable["Claude CLI Max Concurrent Processes"] = ConstantSettings.ClaudeCliMaxConcurrentProcesses;
         }
 
         // ── GTK UI ──────────────────────────────────────────────────────────
@@ -1456,6 +1473,9 @@ namespace subs2srs
                 UtilsCommon.checkRange((int)propTable["AI Request Timeout Seconds"], 10, 3600, PrefDefaults.AiRequestTimeoutSeconds);
             ConstantSettings.AiCacheDir = getStr("AI Cache Directory").Trim();
             ConstantSettings.AiGroupingOnGo = (bool)propTable["AI Grouping On Go"];
+            ConstantSettings.ClaudeCliPath = getStr("Claude CLI Path").Trim();
+            ConstantSettings.ClaudeCliMaxConcurrentProcesses =
+                UtilsCommon.checkRange((int)propTable["Claude CLI Max Concurrent Processes"], 1, 32, PrefDefaults.ClaudeCliMaxConcurrentProcesses);
 
             PrefIO.Write();
         }
