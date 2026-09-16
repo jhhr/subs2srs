@@ -384,11 +384,28 @@ namespace subs2srs
       }
     }
 
+    /// <summary>
+    /// Token counts and the model out of a result object, as a real one looks (recorded 2026-09-16,
+    /// <c>Fixtures/ai/claude-cli-ok.json</c>): nearly the whole prompt is served from the CLI's
+    /// prompt cache, so <c>input_tokens</c> alone said 4 where the request really cost 3,376 — the
+    /// cached and cache-writing tokens are input too and are counted with it. There is no top-level
+    /// <c>model</c> field either; the ID is the key of the per-model usage breakdown, which is the
+    /// canonical name an alias like <c>terminal-sonnet</c> resolved to.
+    /// </summary>
     private static (int input, int output, string model) ReadUsage(JsonElement body)
     {
+      string model = StringOr(body, "model");
+      if (model.Length == 0 && body.TryGetProperty("modelUsage", out JsonElement byModel)
+          && byModel.ValueKind == JsonValueKind.Object)
+      {
+        foreach (JsonProperty entry in byModel.EnumerateObject()) { model = entry.Name; break; }
+      }
       if (!body.TryGetProperty("usage", out JsonElement usage) || usage.ValueKind != JsonValueKind.Object)
-        return (0, 0, "");
-      return (IntOrNull(usage, "input_tokens") ?? 0, IntOrNull(usage, "output_tokens") ?? 0, StringOr(body, "model"));
+        return (0, 0, model);
+      int input = (IntOrNull(usage, "input_tokens") ?? 0)
+        + (IntOrNull(usage, "cache_read_input_tokens") ?? 0)
+        + (IntOrNull(usage, "cache_creation_input_tokens") ?? 0);
+      return (input, IntOrNull(usage, "output_tokens") ?? 0, model);
     }
 
     private static string Tail(string text)

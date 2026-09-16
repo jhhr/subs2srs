@@ -338,6 +338,29 @@ namespace subs2srs.Tests
       Assert.Equal("claude-sonnet-5", o.Model);
     }
 
+    /// <summary>
+    /// A result object exactly as the CLI printed one on 2026-09-16 (claude 2.1.268,
+    /// terminal-claude-sonnet-5, ids scrubbed). It pins the two things a hand-written sample got
+    /// wrong: nearly the whole prompt comes back as cache tokens rather than <c>input_tokens</c>,
+    /// and there is no top-level <c>model</c> field at all.
+    /// </summary>
+    [Fact]
+    public void Classify_ARecordedRealAnswer()
+    {
+      CliOutcome o = ClaudeCli.Classify(0, AiProviderTests.Fixture("claude-cli-ok.json"), "");
+
+      Assert.Equal(CliAction.Ok, o.Action);
+      Assert.Equal("success", o.Subtype);
+      Assert.Null(o.Status); // api_error_status is present but JSON null
+      Assert.Contains("\"first\": 0", o.Json);
+
+      // 4 + 1611 cache-read + 1761 cache-creation: input_tokens alone would report 4.
+      Assert.Equal(3376, o.InputTokens);
+      Assert.Equal(157, o.OutputTokens);
+      // The ID comes from the per-model usage breakdown, not a "model" field.
+      Assert.Equal("claude-sonnet-5", o.Model);
+    }
+
     [Fact]
     public void Classify_TextOnlyAnswer_IsOkWithNoJson()
     {
