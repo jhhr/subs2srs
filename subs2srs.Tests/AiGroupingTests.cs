@@ -196,6 +196,104 @@ namespace subs2srs.Tests
     }
 
     [Fact]
+    public void CacheKey_KeepsTheTerminalPrefix()
+    {
+      var lines = Episode(6, 3);
+      int[] kept = SnippetGrouping.KeptIndices(lines);
+
+      // The prompt is the same, but the transport enforces the schema differently, so the two
+      // paths must not share cached answers.
+      Assert.NotEqual(
+        AiGroupingCache.KeyFor(lines, kept, "claude-sonnet-5", Limits(), 200, ""),
+        AiGroupingCache.KeyFor(lines, kept, "terminal-claude-sonnet-5", Limits(), 200, ""));
+    }
+
+    [Fact]
+    public void Estimate_TerminalModel_SaysSubscriptionInsteadOfAMissingPrice()
+    {
+      using var scope = new TestScope();
+      var lines = Episode(20, 5);
+      AiCostEstimate terminal = AiGrouper.Estimate(lines, Limits(),
+        new AiGroupingOptions { Model = "terminal-claude-sonnet-5", CacheDir = scope.TempDir });
+
+      Assert.True(terminal.Subscription);
+      Assert.Contains("subscription", terminal.Describe());
+      Assert.DoesNotContain("price unknown", terminal.Describe());
+
+      // An unpriced API model still reads as a missing price.
+      AiCostEstimate unknown = AiGrouper.Estimate(lines, Limits(),
+        new AiGroupingOptions { Model = "claude-not-on-the-price-list", CacheDir = scope.TempDir });
+      Assert.Contains("price unknown", unknown.Describe());
+    }
+
+    [Fact]
+    public async Task GroupAsync_TerminalModelWithNoCli_SaysWhereToSetOne()
+    {
+      using var scope = new TestScope();
+      ClaudeCliProvider.Reset();
+      string? savedExe = ClaudeCliProvider.ExecutableOverride;
+      string savedPref = ConstantSettings.ClaudeCliPath;
+      try
+      {
+        ClaudeCliProvider.ExecutableOverride = "";
+        ConstantSettings.ClaudeCliPath = "";
+        ProviderException ex = await Assert.ThrowsAsync<ProviderException>(() => AiGrouper.GroupAsync(
+          Episode(10, 5), Limits(),
+          new AiGroupingOptions { Model = "terminal-claude-sonnet-5", CacheDir = scope.TempDir },
+          null, CancellationToken.None));
+
+        Assert.Contains("Claude CLI Path", ex.Message);
+      }
+      finally
+      {
+        ClaudeCliProvider.ExecutableOverride = savedExe;
+        ConstantSettings.ClaudeCliPath = savedPref;
+      }
+    }
+
+    [Fact]
+    public async Task GroupAsync_TerminalModel_GroupsThroughTheCliWithoutAnyKey()
+    {
+      using var scope = new TestScope();
+      ClaudeCliProvider.Reset();
+      ConstantSettings.AnthropicApiKey = "";
+      var lines = Episode(10, 5);
+      var seen = new List<CliRequest>();
+      try
+      {
+        ClaudeCliProvider.ExecutableOverride = @"C:\fake\claude.exe";
+        ClaudeCliProvider.HelpOverride = _ => "-p --model <m> --output-format <f> --json-schema <s> --system-prompt <p> --safe-mode";
+        ClaudeCliProvider.RunnerOverride = (request, ct) =>
+        {
+          seen.Add(request);
+          string snippets = string.Join(",", Enumerable.Range(0, 10).Select(i =>
+            "{\"first\":" + i + ",\"last\":" + i + "}"));
+          return Task.FromResult(new CliProcessResult
+          {
+            ExitCode = 0,
+            Stdout = "{\"is_error\":false,\"result\":\"ok\",\"structured_output\":{\"snippets\":[" + snippets + "]},"
+              + "\"usage\":{\"input_tokens\":100,\"output_tokens\":10}}",
+          });
+        };
+
+        AiGroupingResult result = await AiGrouper.GroupAsync(lines, Limits(),
+          new AiGroupingOptions { Model = "terminal-claude-sonnet-5", CacheDir = scope.TempDir },
+          null, CancellationToken.None);
+
+        Assert.Equal(0, result.FailedChunks);
+        Assert.NotEmpty(seen);
+        Assert.All(seen, r => Assert.Null(r.Environment["ANTHROPIC_API_KEY"]));
+      }
+      finally
+      {
+        ClaudeCliProvider.ExecutableOverride = null;
+        ClaudeCliProvider.HelpOverride = null;
+        ClaudeCliProvider.RunnerOverride = null;
+        ClaudeCli.ResetProbeCache();
+      }
+    }
+
+    [Fact]
     public void CacheKey_IgnoresTheTranslationTrack()
     {
       var withSubs2 = Episode(6, 3); // the helper fills Subs2 with upper-cased text

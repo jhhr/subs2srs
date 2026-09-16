@@ -103,6 +103,8 @@ namespace subs2srs.Eval
     {
       int requests = 0, input = 0, output = 0, cached = 0;
       double usd = 0;
+      // A terminal- model is paid for by the Claude subscription, so it has no price and needs none.
+      bool subscription = ClaudeCli.IsTerminalModel(options.Model ?? "");
       bool priced = true;
       foreach (GroupingEvalFile file in set.Files)
       {
@@ -114,10 +116,11 @@ namespace subs2srs.Eval
         output += e.OutputTokens;
         if (e.Usd.HasValue) usd += e.Usd.Value; else priced = false;
       }
-      string cost = priced ? FormattableString.Invariant($"about ${usd:0.000}") : "price unknown for this model";
+      string cost = subscription ? AiCostEstimate.SubscriptionCost
+        : priced ? FormattableString.Invariant($"about ${usd:0.000}") : "price unknown for this model";
       stdout.WriteLine(FormattableString.Invariant($"Estimate: {requests} request(s), ~{input:N0} input + ~{output:N0} output tokens, {cost}; {cached} of {set.Files.Count} file(s) already cached"));
 
-      if (options.MaxCostUsd.HasValue && requests > 0)
+      if (options.MaxCostUsd.HasValue && requests > 0 && !subscription)
       {
         if (!priced)
           throw new EvalException($"--max-cost given but {options.Model} has no price in the table; drop --max-cost or add the price to AiPricing", EvalOptions.ExitCostCap);

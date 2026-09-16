@@ -101,6 +101,8 @@ namespace subs2srs.Tests
     [InlineData("o3-mini", "openai")]
     [InlineData("gemini-2.5-flash", "gemini")]
     [InlineData("GEMINI-2.5-pro", "gemini")]
+    [InlineData("terminal-claude-sonnet-5", "claude-cli")]
+    [InlineData("terminal-haiku", "claude-cli")]
     public void ProviderFor_DispatchesOnPrefix(string model, string expected)
     {
       Assert.Equal(expected, ChatProviders.ProviderFor(model));
@@ -110,6 +112,8 @@ namespace subs2srs.Tests
     [InlineData("")]
     [InlineData("llama-3")]
     [InlineData("mistral/large")]
+    [InlineData("terminal-gpt-5")]
+    [InlineData("terminal-")]
     public void ProviderFor_UnknownPrefix_IsNull(string model)
     {
       Assert.Null(ChatProviders.ProviderFor(model));
@@ -123,6 +127,20 @@ namespace subs2srs.Tests
       Assert.IsType<AnthropicProvider>(ChatProviders.Create("claude-sonnet-5"));
       Assert.IsType<OpenAiProvider>(ChatProviders.Create("gpt-5"));
       Assert.IsType<GeminiProvider>(ChatProviders.Create("gemini-2.5-flash"));
+      // "terminal-claude-..." is the CLI, not the API, even though it also starts with claude.
+      Assert.IsType<ClaudeCliProvider>(ChatProviders.Create("terminal-claude-sonnet-5"));
+    }
+
+    [Fact]
+    public void HasApiKeyFor_TerminalModel_NeedsNoKey()
+    {
+      using var scope = new TestScope();
+      ConstantSettings.AnthropicApiKey = "";
+      // The Claude subscription pays for it; there is no key to configure.
+      Assert.True(ChatProviders.HasApiKeyFor("terminal-claude-sonnet-5"));
+      Assert.False(ChatProviders.HasApiKeyFor("claude-sonnet-5"));
+      Assert.Equal("", ChatProviders.EnvVarFor(ChatProviders.ClaudeCli_));
+      Assert.Equal("", ChatProviders.ApiKeyFor(ChatProviders.ClaudeCli_));
     }
 
     [Fact]

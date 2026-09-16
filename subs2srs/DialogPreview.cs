@@ -895,7 +895,9 @@ namespace subs2srs
             if (r.FromCache) return $"AI grouping ({r.Model}): cached answer, no request made.";
             string text = FormattableString.Invariant(
                 $"AI grouping ({r.Model}): {r.Chunks} request(s), {r.InputTokens:N0} input + {r.OutputTokens:N0} output tokens");
-            if (AiPricing.Usd(r.Model, r.InputTokens, r.OutputTokens) is double usd)
+            if (ClaudeCli.IsTerminalModel(r.Model))
+                text += " (" + AiCostEstimate.SubscriptionCost + ")";
+            else if (AiPricing.Usd(r.Model, r.InputTokens, r.OutputTokens) is double usd)
                 text += " (about $" + usd.ToString("0.000", CultureInfo.InvariantCulture) + ")";
             if (r.FailedChunks > 0)
                 text += FormattableString.Invariant($"; {r.FailedChunks} chunk(s) fell back to the rules");

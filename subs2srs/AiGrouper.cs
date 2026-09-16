@@ -47,12 +47,20 @@ namespace subs2srs
     /// <summary>USD, or null when the model's price is not in the table.</summary>
     public double? Usd { get; init; }
     public bool Cached { get; init; }
+    /// <summary>A <c>terminal-</c> model: the Claude subscription pays for it, so there is no API cost.</summary>
+    public bool Subscription { get; init; }
+
+    /// <summary>What a run of these tokens costs, in words.</summary>
+    public string DescribeCost() => Subscription
+      ? SubscriptionCost
+      : Usd.HasValue ? FormattableString.Invariant($"about ${Usd.Value:0.000}") : "price unknown for this model";
+
+    public const string SubscriptionCost = "on the Claude subscription (no API cost)";
 
     public string Describe()
     {
       if (Cached) return "cached answer, no request needed";
-      string cost = Usd.HasValue ? FormattableString.Invariant($", about ${Usd.Value:0.000}") : ", price unknown for this model";
-      return FormattableString.Invariant($"{Chunks} request(s), ~{InputTokens:N0} input + ~{OutputTokens:N0} output tokens{cost}");
+      return FormattableString.Invariant($"{Chunks} request(s), ~{InputTokens:N0} input + ~{OutputTokens:N0} output tokens, {DescribeCost()}");
     }
   }
 
@@ -193,6 +201,7 @@ namespace subs2srs
         InputTokens = input,
         OutputTokens = output,
         Usd = AiPricing.Usd(options.Model, input, output),
+        Subscription = ClaudeCli.IsTerminalModel(options.Model),
       };
     }
 
@@ -216,6 +225,9 @@ namespace subs2srs
       if (provider is HttpChatProvider http && !http.HasApiKey)
         throw new ProviderException(provider.Name, null,
           $"No API key configured for {provider.Name}. Set it in Preferences (AI) or the {ChatProviders.EnvVarFor(provider.Name)} environment variable.");
+      // A terminal- model needs no key, but it does need the command line it runs as.
+      if (provider is ClaudeCliProvider cli && string.IsNullOrWhiteSpace(cli.Executable))
+        throw new ProviderException(provider.Name, null, ClaudeCliProvider.NoCliMessage);
       var runner = new AiBulkRunner(ChatProviders.MaxConcurrentRequests(options.Concurrency));
 
       string system = AiGroupingPrompt.BuildSystem(limits.MaxSnippetMs / 1000, options.ExtraInstructions);
@@ -280,7 +292,9 @@ namespace subs2srs
         Logger.Instance.info("AI grouping: " + message);
 
       string summary = FormattableString.Invariant($"AI grouping: done, {result.InputTokens:N0} input + {result.OutputTokens:N0} output tokens");
-      if (AiPricing.Usd(options.Model, result.InputTokens, result.OutputTokens) is double usd)
+      if (ClaudeCli.IsTerminalModel(options.Model))
+        summary += " (" + AiCostEstimate.SubscriptionCost + ")";
+      else if (AiPricing.Usd(options.Model, result.InputTokens, result.OutputTokens) is double usd)
         summary += " (about $" + usd.ToString("0.000", CultureInfo.InvariantCulture) + ")";
       if (result.FailedChunks > 0)
         summary += FormattableString.Invariant($", {result.FailedChunks} of {result.Chunks} chunk(s) fell back to the rules");

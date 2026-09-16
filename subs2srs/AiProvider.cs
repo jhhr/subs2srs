@@ -543,6 +543,8 @@ namespace subs2srs
     public const string Anthropic = "anthropic";
     public const string OpenAi = "openai";
     public const string Gemini = "gemini";
+    /// <summary>Claude models run as a process on the user's subscription (<see cref="ClaudeCli.TerminalPrefix"/>).</summary>
+    public const string ClaudeCli_ = ClaudeCli.ProviderName;
 
     /// <summary>Test hook: when set, <see cref="Create"/> returns whatever this makes.</summary>
     public static Func<string, IChatProvider>? Override { get; set; }
@@ -552,6 +554,8 @@ namespace subs2srs
     {
       if (string.IsNullOrWhiteSpace(model)) return null;
       string m = model.Trim().ToLowerInvariant();
+      // Checked before the "claude" prefix: "terminal-claude-..." is the CLI, not the API.
+      if (subs2srs.ClaudeCli.IsTerminalModel(m)) return subs2srs.ClaudeCli.IsSupportedModel(m) ? ClaudeCli_ : null;
       if (m.StartsWith("claude", StringComparison.Ordinal) || m.StartsWith("anthropic", StringComparison.Ordinal)) return Anthropic;
       if (m.StartsWith("gpt", StringComparison.Ordinal) || m.StartsWith("o1", StringComparison.Ordinal)
           || m.StartsWith("o3", StringComparison.Ordinal) || m.StartsWith("o4", StringComparison.Ordinal)
@@ -584,11 +588,16 @@ namespace subs2srs
       return (pref ?? "").Trim();
     }
 
-    /// <summary>True when a key is available for the model's provider (used for UI hints; never reveals the key).</summary>
+    /// <summary>
+    /// True when the model can be used as configured: a key is available for its provider, or it is
+    /// a <c>terminal-</c> model, which needs no key at all (used for UI hints; never reveals a key).
+    /// </summary>
     public static bool HasApiKeyFor(string model)
     {
       string? provider = ProviderFor(model);
-      return provider != null && ApiKeyFor(provider) != "";
+      if (provider == null) return false;
+      if (provider == ClaudeCli_) return true; // the subscription pays, there is no key
+      return ApiKeyFor(provider) != "";
     }
 
     /// <summary>
@@ -613,9 +622,11 @@ namespace subs2srs
         case Anthropic: return new AnthropicProvider(model, ApiKeyFor(Anthropic), retry: retry);
         case OpenAi: return new OpenAiProvider(model, ApiKeyFor(OpenAi), retry: retry);
         case Gemini: return new GeminiProvider(model, ApiKeyFor(Gemini), retry: retry);
+        case ClaudeCli_: return new ClaudeCliProvider(model, retry);
         default:
           throw new ProviderException("ai", null,
-            $"Unknown model \"{model}\": the name must start with claude, gpt/o1/o3/o4 or gemini.");
+            $"Unknown model \"{model}\": the name must start with claude, gpt/o1/o3/o4 or gemini, "
+            + "or with terminal-claude- to run on your Claude subscription through the claude CLI.");
       }
     }
   }
