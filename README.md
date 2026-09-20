@@ -40,7 +40,8 @@ is carried over from the original with minimal changes.
 
 ### Removed components
 
-- **SubsReTimer** — separate tool, not part of this port
+- **SubsReTimer** — now a separate project, [subsretimer](https://github.com/jhhr/subsretimer);
+  the Tools tab launches it when it is installed (see below)
 - **DialogAbout** — removed (was WinForms bitmap-based)
 - **DialogPreviewSnapshot** — merged into `DialogPreview`
 - **DialogVideoDimensionsChooser** — removed (size set directly in settings)
@@ -60,6 +61,19 @@ is carried over from the original with minimal changes.
 
 **Optional:**
 - [noto-fonts-cjk](https://github.com/notofonts/noto-cjk) — for Japanese/Chinese/Korean text
+- [subsretimer](https://github.com/jhhr/subsretimer) — for the Subs Re-Timer entry in the Tools tab
+
+## Subs Re-Timer
+
+When two subtitle files for the same episode are timed to different cuts of
+the video (a sponsor segment, opening or eyecatch present in one and not the
+other), the **Subs Re-Timer** entry in the Tools tab re-times one to match
+the other. It runs the separate `subsretimer` program found on `PATH` (or
+in the *Tools Directory* preference), prefilled with the Subs1 and Subs2
+files from the main window. Choose which
+file is the reference (the one already matching your video), optionally
+tick *Auto-align* to skip the editor, and on success subs2srs offers to put
+the re-timed file into the corresponding field.
 
 ## Build
 
