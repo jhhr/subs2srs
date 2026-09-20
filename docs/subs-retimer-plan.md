@@ -1,6 +1,7 @@
-# Subs Re-Timer: research and re-integration plan
+# Subs Re-Timer: research and integration plan
 
-Status: plan, not yet implemented.
+Status: plan. Decision taken: the retimer lives in its own repository and
+subs2srs integrates with it through a command-line contract.
 
 ## 1. How SubsReTimer was included in subs2srs-mono
 
@@ -27,12 +28,11 @@ Findings from `fkzys/subs2srs-mono` and `nihil-admirari/subs2srs-net48-builds`:
 - The GTK4 fork lists it under "Removed components" in the README, but two
   vestiges remain: `ConstantSettings.PathSubsReTimerFull = FindInPath("SubsReTimer")`
   in `subs2srs/Settings.cs` and a matching line in `subs2srs/Logger.cs`.
-  Nothing uses them.
+  Nothing uses them. They become the launch hook (section 4).
 
 **Why the mono approach cannot simply be restored:** the exe needs Mono +
 WinForms + SourceGrid. The whole point of the GTK4 port was to drop Mono and
-`System.Drawing`. Re-adding the tool therefore means porting it, not bundling
-it.
+`System.Drawing`. The tool has to be ported.
 
 ## 2. What the original tool actually does
 
@@ -66,172 +66,190 @@ Algorithms (all timing based, **no text matching at all**):
   `Dialogue:` line with the retimed one; SRT output is regenerated from raw
   text. Output defaults to `<name>_retimed.<ext>`.
 
-What is reusable from the fork today: `UtilsSubs.getOverlap`,
-`UtilsSubs.shiftTiming`, `UtilsSubs.formatAssTime`, `ObjectCloner`,
-`SubsParserASS.getAssDialogRegex` (private; would be made internal). What is
-**not** reusable as-is: the fork's parsers are lossy for round-tripping. They
-strip `{...}` tags, collapse `\N`, join SRT multi-lines with spaces, drop
-empty-text lines, consult `Settings.Instance` for `RemoveStyledLines`, and
-sort by start time. A retimer must write back exactly what it read, so it
-needs a raw-preserving parse path.
+The fork's existing parsers are lossy for round-tripping (they strip `{...}`
+tags, collapse `\N`, join SRT multi-lines, drop empty-text lines, consult
+`Settings.Instance`, and sort). The retimer needs its own raw-preserving
+parse path, which is another reason for it to own its code.
 
-## 3. Plan for re-adding it natively
+## 3. Repository layout
 
-### Phase 1: core library, no UI (testable in `subs2srs.Tests`)
+Two repositories. subs2srs depends on the retimer only at run time, through
+the executable found on `PATH`, exactly like ffmpeg and mkvtoolnix. No
+submodule, no shared build. This was chosen over a submodule because it
+avoids the AUR submodule dance, avoids locking both repos to the same
+GirCore version, and the command-line contract below gives the same UX.
 
-New folder `subs2srs/Retimer/`:
+### `subsretimer` repository
 
-1. `RetimerLine.cs`: `InfoLine` plus `RawLine`, `Layer`, `Style`, `MarginL/R/V`,
-   `Effect`, and `OriginalIndex` (position in the file, so ASS lines can be
-   written back in file order even though the working list is sorted).
-2. `RetimerIO.cs`: `ParseAss`, `ParseSrt`, `WriteAss`, `WriteSrt`,
-   `DefaultOutputPath`. Ports of the retimer's parsers and `SubsWriter`.
-   No dependency on `Settings.Instance`. Detect original line ending and BOM
-   and keep them.
-3. `RetimerEngine.cs`: holds `Left`, `Right`, undo/redo stacks. Methods:
-   `ShiftFrom(rightIndex, ms)`, `ShiftToMatch(leftIndex, rightIndex)`,
-   `ClosestIndex(line, otherList)`, `BestOverlap`, `LargeGapIndices(list)`,
-   `MismatchIndices(list, otherList)`, `AverageMismatch(includeNoOverlap)`,
-   `Undo`, `Redo`, `IsDirty`. Use binary search on sorted start times instead
-   of the original linear scans.
-4. Tests: round-trip ASS and SRT fixtures byte-for-byte after a zero shift;
-   shift-from-index; gap and mismatch detection on small synthetic files;
-   undo/redo. Synthetic fixtures only; the tutorial subtitle files from the
-   original package are third-party content and should not be committed.
-5. Remove the `PathSubsReTimerFull` vestiges in `Settings.cs` and `Logger.cs`.
+```
+subsretimer/
+  SubsRetimer.Core/    net10.0 class library, no GTK dependency
+    RetimerLine.cs     line model: times, text, RawLine, Layer, Style,
+                       MarginL/R/V, Effect, OriginalIndex
+    RetimerIO.cs       ParseAss/ParseSrt/WriteAss/WriteSrt/DefaultOutputPath,
+                       keeps BOM and original line endings
+    RetimerEngine.cs   Left/Right lists, ShiftFrom, ShiftToMatch,
+                       ClosestIndex, BestOverlap, LargeGapIndices,
+                       MismatchIndices, AverageMismatch, Undo/Redo, IsDirty
+    AutoAlign.cs       timing-based piecewise-offset alignment (section 5)
+  SubsRetimer.Gtk/     class library: the editor window and widgets
+    RetimerWindow.cs   two ColumnViews, stats strip, Time Shift, Undo/Redo,
+                       Open/Save, keyboard shortcuts, Auto Align button
+  SubsRetimer/         thin executable `subsretimer`: argument parsing,
+                       GUI or headless mode, stdout protocol
+  SubsRetimer.Tests/   xUnit: round-trip, shift, gap/mismatch, undo,
+                       auto-align on synthetic fixtures, CLI protocol
+  dist/                subsretimer.desktop, launcher script
+  Makefile             build / test / install (mirrors subs2srs)
+  LICENSE              GPL-3.0-or-later (port of GPL code)
+```
 
-### Phase 2: GTK4 window
+The `Gtk` library is separate from the executable so that an in-process
+integration (ProjectReference from subs2srs) stays one step away if the
+process-based one ever proves insufficient. Do not start there.
 
-`subs2srs/DialogSubsRetimer.cs`, following the `DialogDuelingSubtitles`
-pattern (`Gtk.Window`, `SetTransientFor`, nested `GLib.MainLoop`, `Run()`).
-A non-modal window would suit a standalone tool better; either is fine, but
-stay consistent with the other tool dialogs unless there is a reason not to.
+Third-party subtitle files from the original package (`Tutorial_Files/`)
+are not committed; tests use synthetic fixtures.
 
-Layout (mirrors the original, minus the chart):
+### `subs2srs` repository
 
-- Top bar: Average Mismatch, left count `sel/total`, right count.
-- Two `Gtk.ColumnView`s (Start, Dialog) side by side with the filename above
-  each. Row coloring via CSS classes (`retimer-gap`, `retimer-mismatch`)
-  applied in the `OnBind` handler; use the CSS injection already in
-  `GtkColumnViewHelper`. Note GTK4 colors cells, not rows, so apply the class
-  to both cells of a row.
-- Detail strip: selected left/right text and start time, overlap %, signed
-  diff, "Time Shift" button, Undo/Redo, Save, Save As.
-- Menu or header buttons: Open Left, Open Right (async `Gtk.FileDialog`,
-  same as the rest of the app), Save Right, Save Right As.
-- Keyboard: Enter = Time Shift, Ctrl+Z/Y, Ctrl+O / Ctrl+Shift+O, Ctrl+S,
-  Ctrl+Up/Down = previous/next orange line, Left/Right = move and select
-  closest line on the other side. Right-click on a row = select closest on
-  the other side. Drag-and-drop of files onto a list via `Gtk.DropTarget`.
-- Entry point: a new frame "Subs Re-Timer" in `MainWindow.BuildToolsTab`
-  with a one-line description and a "Subs Re-Timer..." button, placed after
-  Dueling Subtitles like the original menu order. Prefill Left/Right from
-  the main window's Subs1/Subs2 fields when they point at a single `.ass`
-  or `.srt` file.
-- Phase 2b (optional): timeline chart as a `Gtk.DrawingArea` with Cairo,
-  ported from `ChartSubs.cs`. The chart is a nice-to-have; the list colors
-  plus overlap % carry the workflow on their own.
+Only the launcher and the hand-back (section 4). No parsing or retiming
+code is added to subs2srs.
 
-Docs and packaging:
+## 4. Command-line contract
 
-- README: drop the "SubsReTimer — separate tool" line from Removed
-  components; add a short usage section derived from `usage.html`
-  (workflow: left = reference, right = to be retimed, work top to bottom,
-  orange lines are where shifts are needed, gray lines have no counterpart).
-- CHANGELOG entry and version bump per repo convention.
-- No separate desktop entry needed since it lives inside the app. If a
-  direct launcher is wanted later, add a `--retimer` flag in `Program.cs`
-  and a `dist/subs2srs-retimer.desktop`.
+```
+subsretimer [options] [REFERENCE] [TARGET]
 
-### Phase 3: automatic alignment (the requested automation)
+  REFERENCE   subtitle file already timed to the video (left pane)
+  TARGET      subtitle file to be retimed (right pane)
 
-Add `RetimerAutoAlign.cs` and an "Auto Align" button. The manual tool's
-single operation (shift everything from index *i* by *d*) is exactly the
-right primitive; automation only has to find the breakpoints and offsets.
-That can be done from timing structure alone:
+  --auto                 run auto-align and save without opening the GUI
+  -o, --output PATH      output path (default: <TARGET>_retimed.<ext>)
+  --ref-encoding NAME    encoding of REFERENCE (default utf-8)
+  --target-encoding NAME encoding of TARGET (default utf-8)
+  --print-output         print the path of each saved file to stdout
+  --version, --help
+```
 
-1. **Candidate offsets.** For every right line, for every left line whose
-   start is within a window (say ±10 min), take `d = left.start − right.start`,
-   quantize to 100 ms bins and histogram over the whole file. The top peaks
-   are the candidate offsets. Sponsor segments, the OP, and eyecatches show
-   up as a handful of distinct peaks (0, ±15 s, ±90 s, and their sums).
-2. **Per-line scores.** For each right line and each candidate offset,
-   score = best overlap of the shifted line against the left file (binary
+Rules that subs2srs relies on:
+
+- **stdout is reserved for saved paths.** With `--print-output`, every
+  successful save (GUI or `--auto`) prints exactly one line, the absolute
+  path of the file written, flushed immediately. Nothing else is ever
+  printed to stdout. All diagnostics go to stderr.
+- **Exit codes.** `0` = at least one file was saved. `2` = exited without
+  saving (user closed the GUI, or `--auto` found nothing to do). `1` = error,
+  message on stderr. Any other value is treated as an error.
+- **Arguments are optional in GUI mode.** With zero or one file the GUI
+  opens with the panes that were given filled in.
+- **`--auto` requires both files** and never opens a window. It does not
+  overwrite an existing output unless `--output` names it explicitly.
+- Batch use is a shell loop over `--auto`; no batch syntax in v1.
+
+### subs2srs side
+
+1. `ConstantSettings`: rename the vestige to `PathSubsRetimerExe =
+   FindInPath("subsretimer")`; keep the Logger line in step.
+2. New `DialogSubsRetimerLaunch` opened from a "Subs Re-Timer" frame in the
+   Tools tab (after Dueling Subtitles, matching the original menu order):
+   - Reference: radio `Subs1` / `Subs2`. Default `Subs2`, since in the
+     common case the native-language subs match the video and the
+     target-language Subs1 is the one to retime. Remember the last choice
+     in preferences.
+   - Two path entries prefilled from the main window's Subs1/Subs2 fields
+     and their encodings. Editable, with Browse buttons.
+   - Checkbox "Auto-align without opening the editor" → adds `--auto`.
+   - If the executable is not on `PATH`, the frame shows a hint naming the
+     package instead of the button.
+3. Launch with `--print-output`, capture stdout, `WaitForExitAsync` with
+   the app's existing async/`IProgressReporter` pattern so the main window
+   stays responsive. On exit code `0`, take the last stdout line, verify the
+   file exists, and ask "Use `<name>_retimed.ass` as Subs1?" (the side that
+   was retimed). On yes, set that entry. On `2`, do nothing. On `1` or
+   unknown, show stderr in the usual error dialog.
+4. Later: when the Subs fields hold wildcard patterns, resolve both with
+   `UtilsSubs.getSubsFiles`, pair by index, run `--auto` per pair with a
+   progress bar, and offer to rewrite the pattern to the `_retimed` files.
+   Not in v1.
+
+## 5. Automatic alignment (in `SubsRetimer.Core/AutoAlign.cs`)
+
+The manual tool's single operation (shift everything from index *i* by *d*)
+is the right primitive; automation only has to find the breakpoints and
+offsets, and timing structure alone is enough for that:
+
+1. **Candidate offsets.** For every target line, for every reference line
+   whose start is within ±10 min, take `d = ref.start − target.start`,
+   quantize to 100 ms bins and histogram over the file. The top peaks are
+   the candidates. Sponsor segments, the OP and eyecatches appear as a few
+   distinct peaks (0, ±15 s, ±90 s, and their sums).
+2. **Per-line scores.** For each target line and candidate offset,
+   score = best overlap of the shifted line against the reference (binary
    search on starts). Zero if nothing overlaps.
-3. **Segmentation.** Dynamic programming over right lines with the candidate
-   offset as state: minimize `−score` plus a switch penalty λ (a few lines'
-   worth of overlap) whenever the offset changes. Backtrack to get a
-   piecewise-constant offset with few breakpoints. Lines that overlap
-   nothing under any offset (CC-only sound cues, music) simply inherit their
-   segment's offset, which is the shift-all behaviour that motivates the
-   feature.
+3. **Segmentation.** Dynamic programming over target lines with the
+   candidate offset as state: minimize `−score` plus a switch penalty λ
+   (a few lines' worth of overlap) whenever the offset changes. Backtrack
+   to a piecewise-constant offset with few breakpoints. Lines that overlap
+   nothing under any offset (CC-only sound cues, music) inherit their
+   segment's offset: the shift-all behaviour that motivates the feature.
 4. **Refinement.** Within each segment, replace the binned offset with the
-   median of `left.start − right.start` over the pairs that overlap.
+   median of `ref.start − target.start` over the overlapping pairs.
 5. **Apply as a sequence of `ShiftFrom` calls** so each breakpoint is one
-   undoable step and the user reviews the result with the existing
-   orange/gray coloring and the mismatch statistic.
+   undoable step and the user reviews the result with the orange/gray
+   coloring and the mismatch statistic. `--auto` applies the same sequence
+   and saves.
 
-Cost is `O(N · K · log N)` for N lines and K candidates, negligible for
-episode-sized files. This is a simplified version of the model used by
-`alass` (piecewise-constant offsets with a split penalty), which is a
-language-independent subtitle-to-subtitle aligner. `alass` could also be
-offered as an optional external engine found on `PATH`, the same way ffmpeg
-and mkvtoolnix are, but the native version above is small enough to own and
-keeps the tool self-contained.
+Cost is `O(N · K · log N)`, negligible for episode-sized files. This is a
+simplified version of the model used by `alass` (piecewise-constant offsets
+with a split penalty).
 
-Tests: build a synthetic reference file, derive the other file by inserting
-or removing 15 s / 90 s blocks at a few points, adding a few extra lines
-with no counterpart, and jittering timings by ±80 ms; assert that the
-detected breakpoints and offsets match the construction.
+Tests: build a synthetic reference, derive the target by inserting or
+removing 15 s / 90 s blocks at a few points, adding lines with no
+counterpart, and jittering by ±80 ms; assert the detected breakpoints and
+offsets match the construction.
 
-### Phase 4 (only if Phase 3 proves insufficient): LLM assist
+## 6. Is the LLM feature needed?
 
-See section 4. If added, keep it behind an `IAnchorFinder` interface so the
-timing-based aligner remains the default and the LLM is an optional,
-narrowly scoped helper.
-
-## 4. Is the LLM feature needed?
-
-Short answer: not for the core problem. The proposed pipeline is
-
-1. semantically match lines across languages,
-2. detect where matched pairs disagree in time,
-3. shift everything from the first disagreement,
-4. repeat to the end.
-
-Steps 2 to 4 are the original tool's manual workflow and are trivially
-automated once anchors exist. Only step 1 needs a matcher, and timing
-structure already provides one: both files describe the same dialogue on
-the same footage, so the pattern of line durations and gaps is a shared
-fingerprint. Piecewise-offset alignment from timings alone is a solved
-problem (see `alass`), is deterministic, runs offline in milliseconds, has
-no API key, cost, or privacy surface, and is unit-testable.
+Not for the core problem. The proposed pipeline (semantically match lines,
+detect timing disagreements, shift from the first one, repeat) is the
+original tool's manual workflow with an LLM supplying the anchor pairs.
+Section 5 supplies the anchors from timing structure instead: deterministic,
+offline, free, and unit-testable. The shift-all behaviour for CC-only lines
+falls out naturally.
 
 Where an LLM would genuinely add something:
 
-- **Ambiguous regions**: long stretches with sparse dialogue, or a CC file
-  with many sound-cue lines that swamp the timing fingerprint, where two
-  candidate offsets score nearly equally.
-- **Verification**: after auto-alignment, sampling a few pairs per segment
-  and asking "do these say the same thing?" gives a confidence report and
-  catches a wrong segment.
-- **Segmentation differences**: one English line covering two Japanese
-  lines, or vice versa. Timing overlap handles this reasonably; text does
-  not obviously do better because translations are rarely line-for-line.
+- **Ambiguous regions**: sparse dialogue, or a CC file whose sound-cue lines
+  swamp the timing fingerprint, where two candidate offsets score equally.
+- **Verification**: sample a few pairs per segment and ask whether they say
+  the same thing, giving a confidence report.
+- **Segmentation differences** (one line covering two on the other side) are
+  handled reasonably by overlap; text does not obviously do better because
+  translations are rarely line-for-line.
 
-Costs of an LLM-first design worth weighing:
+Costs of an LLM-first design: a long-context call per episode, an API key,
+network and money; noisy index outputs that need the same overlap sanity
+checks anyway; and lower precision than timing (tens of ms).
 
-- Whole-file cross-language pairing of ~500 × ~500 lines needs a
-  long-context call per episode, an API key, network access, and money;
-  batch processing a season multiplies this.
-- Index outputs from models are noisy (off-by-one, hallucinated pairs) and
-  need the same overlap sanity checks the timing method already applies.
-- Translated subtitles versus Japanese CC are not literal, so "semantic
-  match" is fuzzy anyway; the timing method's precision (tens of ms) is
-  better than what text pairing can provide.
+Recommendation: ship sections 3 to 5 and use them on real EN/JP pairs. Add
+the LLM only as a targeted assist for low-confidence breakpoints if real
+files show the timing method failing there, queried with a small window of
+lines around the uncertain breakpoint, behind an `IAnchorFinder` interface
+in `SubsRetimer.Core`.
 
-Recommendation: implement Phases 1 to 3. Ship the timing-based Auto Align
-and use it on real EN/JP pairs. Add the LLM only as a targeted assist for
-low-confidence breakpoints if real files show the timing method failing
-there. If it is added, query it with a small window of lines around the
-uncertain breakpoint rather than the whole file.
+## 7. Order of work
+
+1. `subsretimer` repo: Core + Tests (round-trip, shift, gap/mismatch, undo).
+2. `subsretimer` repo: executable with `--auto`, `--print-output`, exit
+   codes; CLI tests that spawn the process and assert the stdout protocol.
+3. `subs2srs`: launcher dialog and hand-back; test against step 2's
+   headless mode.
+4. `subsretimer` repo: `AutoAlign` and its synthetic-fixture tests; wire
+   into `--auto`.
+5. `subsretimer` repo: GTK window (the manual editor), Auto Align button.
+6. Packaging and docs in both repos: README, CHANGELOG, desktop entry,
+   AUR `optdepends` on the subs2srs side.
+
+Steps 1 to 4 need only the .NET SDK and are fully testable headless. Step 5
+needs a GTK4 desktop to verify by hand.
