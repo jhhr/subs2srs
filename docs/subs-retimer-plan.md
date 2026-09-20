@@ -1,7 +1,12 @@
 # Subs Re-Timer: research and integration plan
 
-Status: plan. Decision taken: the retimer lives in its own repository and
-subs2srs integrates with it through a command-line contract.
+Status: steps 1 to 4 of section 7 are implemented (`subsretimer` Core,
+tests, CLI with `--auto` and the stdout contract, auto-align, and the
+subs2srs launcher). Step 5, the GTK editor window, is open.
+
+Decision taken: the retimer lives in its own repository
+(https://github.com/jhhr/subsretimer) and subs2srs integrates with it
+through the command-line contract in section 4.
 
 ## 1. How SubsReTimer was included in subs2srs-mono
 

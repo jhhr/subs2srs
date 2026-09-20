@@ -303,7 +303,7 @@ namespace subs2srs
       var(new { ConstantSettings.NormalizeAudioExe });
       var(new { ConstantSettings.PathNormalizeAudioExeRel });
       var(new { ConstantSettings.PathNormalizeAudioExeFull });
-      var(new { ConstantSettings.PathSubsReTimerFull });
+      var(new { ConstantSettings.PathSubsRetimerExeFull });
       var(new { ConstantSettings.PathMkvDirRel });
       var(new { ConstantSettings.PathMkvDirFull });
       var(new { ConstantSettings.PathMkvInfoExeRel });

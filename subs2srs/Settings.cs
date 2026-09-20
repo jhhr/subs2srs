@@ -48,6 +48,8 @@ namespace subs2srs
     public const int DefaultVideoClipAudioBitrate = 128;
     public const int DefaultSnapshotJpegQuality = 3;
     public const bool DefaultIphoneSupport = false;
+    public const bool SubsRetimerReferenceIsSubs2 = true;
+    public const bool SubsRetimerAuto = false;
     public const string DefaultEncodingSubs1 = "utf-8";
     public const string DefaultEncodingSubs2 = "utf-8";
     public const int DefaultContextNumLeading = 0;
@@ -174,7 +176,8 @@ namespace subs2srs
     public static string NormalizeAudioExe { get; } = "mp3gain";
     public static string PathNormalizeAudioExeRel { get; } = "mp3gain";
     public static string PathNormalizeAudioExeFull { get; } = FindInPath("mp3gain");
-    public static string PathSubsReTimerFull { get; } = FindInPath("SubsReTimer");
+    public static string SubsRetimerExe { get; } = "subsretimer";
+    public static string PathSubsRetimerExeFull { get; } = FindInPath("subsretimer");
 
     public static string ExeMkvInfo { get; } = "mkvinfo";
     public static string PathMkvDirRel { get; } = "";
@@ -199,6 +202,18 @@ namespace subs2srs
     {
         get => Prefs.MaxParallelTasks;
         set => Prefs.MaxParallelTasks = value;
+    }
+
+    public static bool SubsRetimerReferenceIsSubs2
+    {
+        get => Prefs.SubsRetimerReferenceIsSubs2;
+        set => Prefs.SubsRetimerReferenceIsSubs2 = value;
+    }
+
+    public static bool SubsRetimerAuto
+    {
+        get => Prefs.SubsRetimerAuto;
+        set => Prefs.SubsRetimerAuto = value;
     }
 
     public static int EffectiveParallelism => MaxParallelTasks > 0

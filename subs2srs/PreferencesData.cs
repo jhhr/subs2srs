@@ -48,6 +48,10 @@ namespace subs2srs
         public int LongClipWarningSeconds { get; set; } = PrefDefaults.LongClipWarningSeconds;
         public int MaxParallelTasks { get; set; } = PrefDefaults.MaxParallelTasks;
 
+        // ── Subs Re-Timer launcher ───────────────────────────────────────────
+        public bool SubsRetimerReferenceIsSubs2 { get; set; } = PrefDefaults.SubsRetimerReferenceIsSubs2;
+        public bool SubsRetimerAuto { get; set; } = PrefDefaults.SubsRetimerAuto;
+
         // ── Audio clips ──────────────────────────────────────────────────────
         public int DefaultAudioClipBitrate { get; set; } = PrefDefaults.DefaultAudioClipBitrate;
         public string AudioFormat { get; set; } = PrefDefaults.DefaultAudioFormat;

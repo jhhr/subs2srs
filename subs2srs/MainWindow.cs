@@ -308,6 +308,37 @@ namespace subs2srs
             duelingFrame.SetChild(duelingBox);
             vbox.Append(duelingFrame);
 
+            // Subs Re-Timer (external tool: https://github.com/jhhr/subsretimer)
+            var retimerFrame = Gtk.Frame.New("Subs Re-Timer");
+            var retimerBox = Gtk.Box.New(Gtk.Orientation.Vertical, 6);
+            retimerBox.SetMarginTop(8); retimerBox.SetMarginBottom(8);
+            retimerBox.SetMarginStart(8); retimerBox.SetMarginEnd(8);
+            var lblRetimer = Gtk.Label.New(SubsRetimerLauncher.IsAvailable
+                ? "Re-time one subtitle file to match the timings of the other."
+                : "Re-time one subtitle file to match the other. Requires the "
+                  + "'subsretimer' tool on PATH (https://github.com/jhhr/subsretimer).");
+            lblRetimer.SetHalign(Gtk.Align.Start);
+            lblRetimer.SetWrap(true);
+            retimerBox.Append(lblRetimer);
+            var btnRetimer = Gtk.Button.NewWithLabel("Subs Re-Timer...");
+            btnRetimer.SetHalign(Gtk.Align.Start);
+            btnRetimer.SetSensitive(SubsRetimerLauncher.IsAvailable);
+            btnRetimer.OnClicked += (s, e) =>
+            {
+                var dlg = new DialogSubsRetimer(this,
+                    _txtSubs1.GetText().Trim(), GetSelectedEncodingLong(_comboEncodingSubs1, _encModel1),
+                    _txtSubs2.GetText().Trim(), GetSelectedEncodingLong(_comboEncodingSubs2, _encModel2));
+                if (dlg.Run() == 1 && dlg.SavedPath != null)
+                {
+                    if (dlg.RetimedSide == 1) _txtSubs1.SetText(dlg.SavedPath);
+                    else _txtSubs2.SetText(dlg.SavedPath);
+                }
+                dlg.Close();
+            };
+            retimerBox.Append(btnRetimer);
+            retimerFrame.SetChild(retimerBox);
+            vbox.Append(retimerFrame);
+
             // Advanced Subtitle Options
             var advFrame = Gtk.Frame.New("Advanced Subtitle Options");
             var advBox = Gtk.Box.New(Gtk.Orientation.Vertical, 6);

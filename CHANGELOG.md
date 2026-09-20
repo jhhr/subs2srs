@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.2.10
+
+**Features:**
+- **Subs Re-Timer** entry in the Tools tab: launches the external [subsretimer](https://github.com/jhhr/subsretimer) tool with the main window's Subs1/Subs2 files, lets you choose which file is the reference and whether to auto-align headlessly, and offers to use the re-timed file in the main window afterwards. The button is disabled with a hint when `subsretimer` is not on `PATH`.
+- New preferences `SubsRetimerReferenceIsSubs2` and `SubsRetimerAuto` remember the launcher's last choices.
+
+**Chores:**
+- Replaced the unused `PathSubsReTimerFull` constant left over from the Mono port with `PathSubsRetimerExeFull` (looks for `subsretimer` on `PATH`).
+
+---
+
 ## 0.2.9
 
 **Bug fixes**:
