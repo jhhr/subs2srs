@@ -9,7 +9,8 @@ A fork of the GTK4 / .NET 10 port of subs2srs (Anki cards from video + subtitles
 this fork adds: Windows 10/11 support with a bundled GTK runtime, GTK UI tests, multi-line dialogue
 **snippets** (rules or AI grouping, with a preview editor), **gap removal** inside a card's media,
 **animated snapshots** (webp/avif), an AI provider layer (Anthropic, OpenAI, Gemini, and Claude through
-the `claude` CLI) and a grouping **evaluation console**.
+the `claude` CLI), a grouping **evaluation console**, and a Tools-tab launcher for the external
+**subsretimer** tool (`jhhr/subsretimer`, a separate repository).
 
 - `origin` = `jhhr/subs2srs` (this fork), `upstream` = `Ajatt-Tools/subs2srs`. Branches and PRs target
   the fork: `gh pr create --repo jhhr/subs2srs` (plain `gh pr create` may pick the upstream parent).
@@ -119,7 +120,7 @@ Read the one that matches the task; they are written to be read on their own.
 
 | Doc | Read it when you touch |
 | --- | --- |
-| [docs/architecture.md](docs/architecture.md) | The pipeline, `InfoCombined`, snippets / join vectors, omitted lines, gap removal, media workers, the preview ↔ Go hand-off, settings vs preferences |
+| [docs/architecture.md](docs/architecture.md) | The pipeline, `InfoCombined`, snippets / join vectors, omitted lines, gap removal, media workers, the preview ↔ Go hand-off, settings vs preferences, external tools and the `subsretimer` launch contract |
 | [docs/ai-grouping.md](docs/ai-grouping.md) | Providers, rate limiting and retries, prompt / cache, the `claude` CLI transport and its half-documented contract, pricing, the eval console and regression gate |
 | [docs/testing.md](docs/testing.md) | Any test: harness classes, fakes and hooks, skip attributes, env vars, UI test mechanics, how to test media output |
 | [docs/gtk-and-windows.md](docs/gtk-and-windows.md) | GTK widgets or GirCore APIs, external tool launching, Windows packaging scripts, CI workflows |

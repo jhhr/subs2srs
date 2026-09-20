@@ -23,6 +23,11 @@ decision in the topic doc.
   and the file sizes are sane.
 - Linux column drag-resize and a clean-machine Windows run: see
   [gtk-and-windows.md](gtk-and-windows.md).
+- **`subsretimer` auto-align has only seen synthetic fixtures** (irregular generated dialogue with
+  15 s / 90 s cuts, jitter and sound cues). No real EN/JP closed-caption pair has been through it; the
+  switch penalty (2.5 lines of overlap) and the 28 s gap threshold inherited from the original tool are
+  untested defaults. Run `subsretimer --auto EN.srt JP.ass` on a real episode and read the segment
+  summary on stderr. The launcher has never been run on Windows.
 
 ## Defaults that are guesses
 
@@ -50,6 +55,22 @@ No labelled data existed when these were chosen. The eval console exists to sett
 - Grouped cards use the audio-clip pad for video and animated snapshots too.
 
 ## Deferred features
+
+- **`subsretimer` integration**, in order of value:
+  1. The tool's interactive editor is not ported yet, so the launcher's non-auto path fails with the
+     tool's "use --auto" message. Nothing on the subs2srs side changes when it lands; the contract
+     already covers a window that saves zero or more files.
+  2. Wildcard patterns in Subs1/Subs2 are refused by the dialog. The planned batch mode resolves both
+     patterns with `UtilsSubs.getSubsFiles`, pairs by index, runs `--auto` per pair behind a progress
+     bar and offers to rewrite the pattern to the `_retimed` files.
+  3. Small code follow-ups from the docs review: `SubsRetimerLauncher.RunAsync` builds its own
+     `ProcessStartInfo` instead of `UtilsCommon.makeToolStartInfo`, so its pipes are not forced to
+     UTF-8 (a non-ASCII saved path on Windows would come back garbled); the two `SubsRetimer*`
+     preferences are not in `DialogPref` or `Logger.writeSettingsToLog` (the "five places" rule);
+     the env-gated `RealTool_*` tests should use `[RequiresEnvFact("SUBSRETIMER_EXE")]`; and
+     `DialogSubsRetimer` has no `subs2srs.UiTests` coverage (it was verified once by a throwaway
+     Xvfb harness: auto-align success handing the file back, failure re-enabling Run, wildcard
+     validation).
 
 - **Batch API mode** (half price on all three providers). Deferred until a real run shows the
   per-episode cost. Nothing prepares for it: it means a second request path per adapter and a polling

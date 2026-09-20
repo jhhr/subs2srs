@@ -26,6 +26,13 @@ file. This page is how to run, write and trust the tests.
 | `SUBS2SRS_AI_LIVE_MODEL=<model>` + the provider's key var | `AiLiveTests`: one real API call | API money |
 | `SUBS2SRS_AI_CLI_LIVE=1` (Claude Code installed and signed in) | `ClaudeCliLiveTests`: one real `claude -p` run and a flag check. `SUBS2SRS_AI_CLI_LIVE_DUMP=<file>` keeps the raw output | Subscription usage |
 | hold-out files + cache under `Fixtures/eval/` | `EvalRegressionTests` gate | none |
+| `SUBSRETIMER_EXE=<path to a built subsretimer>` | `SubsRetimerLauncherTests.RealTool_*`: the real tool on generated files, checking the stdout/exit-code contract end to end | none (local process, no network) |
+
+`SUBSRETIMER_EXE` is the one to set after changing `SubsRetimerLauncher` or the tool's command line: the
+other launcher tests only exercise argument building and result parsing. It points at the
+`subsretimer` binary from the tool's `make build` (`SubsRetimer/bin/Release/net10.0/publish/`). Those two
+tests currently *return* when the variable is unset instead of using `[RequiresEnvFact]`, so they show
+as passed, not skipped; see [open-items.md](open-items.md).
 
 Do not set these unless the user asks. When a live run reveals a real response shape, save it as a
 fixture under `subs2srs.Tests/Fixtures/ai/` (that is how `claude-cli-ok.json` came to be, and it caught
