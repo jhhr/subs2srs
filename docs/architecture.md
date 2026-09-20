@@ -161,3 +161,38 @@ External tools (ffmpeg, ffprobe, ffplay, mkvtoolnix, mp3gain) are resolved on ev
 `ConstantSettings.ResolveTool` (the *Tools Directory* preference, then a PATHEXT-aware PATH search) and
 started through `UtilsCommon.makeToolStartInfo` (UTF-8 pipes, no window, `-nostdin` for ffmpeg). Start
 new tool processes the same way; `UseShellExecute` and bare tool names broke on Windows.
+
+### The `subsretimer` launcher
+
+Subtitle re-timing is not part of the pipeline. It lives in a separate repository,
+[jhhr/subsretimer](https://github.com/jhhr/subsretimer) (a GTK4/.NET port of the Subs Re-Timer that
+shipped with the original subs2srs), and subs2srs only *launches* it: `SubsRetimerLauncher` (arguments,
+process, result) and `DialogSubsRetimer` (the Tools-tab window). There is no build dependency and no
+shared code; the two repositories are coupled only by the command-line contract below. Keep it that
+way: the decision against a submodule was taken to avoid locking both repositories to one GirCore
+version and to keep AUR packaging simple.
+
+The contract subs2srs relies on (documented on the tool's side in its README; a change there is a
+breaking change here):
+
+| Rule | subs2srs side |
+| --- | --- |
+| `subsretimer [options] [REFERENCE] [TARGET]`; REFERENCE is the file already timed to the video, TARGET the one to re-time | The dialog's *Reference* radio decides which of Subs1/Subs2 is which; the other side is the one that gets replaced afterwards |
+| Paths are passed after `--` | So a file name starting with `-` cannot be read as an option |
+| `--ref-encoding` / `--target-encoding` take subs2srs **short** encoding names (`utf-8`, `shift_jis`, …) | `InfoEncoding.longToShort` on the main window's dropdown values |
+| `--auto` runs the alignment and saves without a window; without it the tool opens its editor | The *Auto-align* checkbox. Until the tool's editor is ported, non-auto runs exit 1 with a message |
+| `--auto` never overwrites `<TARGET>_retimed.<ext>` unless `--output` names it | A second run on the same pair therefore fails; the error text says so |
+| With `--print-output`, **stdout carries only saved paths**, one per line, flushed on each save; everything else goes to stderr | `ParseResult` takes the last non-empty stdout line as the saved file |
+| Exit `0` = at least one file saved, `2` = nothing saved (editor closed, or a file had no timed lines), `1` = error on stderr; anything else is treated as an error | `Result.Saved` / `NothingSaved` / `Failed`. Exit 0 with an empty stdout counts as nothing saved |
+
+The executable is found like every other tool, `ConstantSettings.ResolveToolOrName("subsretimer")`
+(*Tools Directory*, then PATH, `.exe` on Windows), and `SubsRetimerLauncher.IsAvailable` gates the
+button. The run is `await`ed on the GTK thread (`Process.WaitForExitAsync` plus `ReadToEndAsync` on both
+pipes, so a chatty stderr cannot deadlock the child); the dialog's nested main loop keeps pumping
+meanwhile. On success the dialog asks, through `UtilsMsg.showConfirm`, whether to put the saved path
+into the re-timed side's field. The tool's stderr is what the user sees on failure, so the tool must keep
+its messages user-readable.
+
+Two preferences, `SubsRetimerReferenceIsSubs2` and `SubsRetimerAuto`, remember the dialog's last
+choices. They are written by the dialog itself, not by `DialogPref` (see
+[open-items.md](open-items.md)).

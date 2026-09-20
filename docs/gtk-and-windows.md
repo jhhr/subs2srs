@@ -41,6 +41,12 @@ same GirCore packages, loads the assemblies and prints method signatures, tolera
   brings continuations back to the GTK thread.
 - While the preview is busy (AI call) it disables the list, the action rows and Go but keeps **Cancel**
   enabled; it does not grey out the whole window, because Cancel has to stay clickable.
+- Tool dialogs (`DialogMkvExtract`, `DialogDuelingSubtitles`, `DialogSubsRetimer`) are modal
+  `Gtk.Window`s whose `Run()` spins a **nested `GLib.MainLoop`** until `close-request`. An
+  `async void` click handler that `await`s a process inside such a dialog resumes on the GTK thread
+  through `GtkSynchronizationContext` and the nested loop; `Close()` from inside the continuation quits
+  the loop and `Run()` returns. `DialogSubsRetimer.OnRunClicked` is the reference for that pattern,
+  including cancelling the child process on close.
 - `GSK_RENDERER=cairo` is the safe renderer: old GPUs, Remote Desktop, Xvfb and CI all render blank or
   crash on the GL renderers. The Windows build defaults to it.
 
@@ -58,6 +64,9 @@ same GirCore packages, loads the assemblies and prints method signatures, tolera
   `PackageReference` for it produces warning NU1510.
 - External tools: see the end of [architecture.md](architecture.md). ffmpeg is never bundled (size,
   licensing); `MainWindow.CheckExternalTools()` disables Go with an install hint when it is missing.
+  `subsretimer` is optional and resolved the same way; the Tools-tab button is disabled with a hint
+  when it is absent. Nothing on Windows has run it yet (the tool has no Windows build or `.exe` name
+  convention beyond what `ResolveTool` assumes).
 - Build paths with `Path.Combine`; several Windows bugs were hard-coded `/` temp paths.
 - The app writes **no log at startup** unless something fails; "a log file exists" is not a liveness
   signal.
