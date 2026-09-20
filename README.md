@@ -109,10 +109,44 @@ Troubleshooting: if windows render blank or the app crashes at startup on an old
 Remote Desktop, set the environment variable `GSK_RENDERER=cairo` (the bundled build already
 defaults to it). The log directory above contains GTK warnings and the full ffmpeg command lines.
 
-Building on Windows: install [MSYS2](https://www.msys2.org/), then
-`pacman -S mingw-w64-ucrt-x86_64-gtk4 mingw-w64-ucrt-x86_64-ntldd`, add `C:\msys64\ucrt64\bin`
-to `PATH` for development runs (`dotnet run --project subs2srs`), and use `make publish-windows`
-(or the commands in `.github/workflows/release.yml`) to produce the bundled zip.
+### Building on Windows
+
+Install [MSYS2](https://www.msys2.org/), then in its shell
+`pacman -S mingw-w64-ucrt-x86_64-gtk4 mingw-w64-ucrt-x86_64-ntldd`. That gives you the GTK 4
+runtime in `C:\msys64\ucrt64\bin`. There are two ways to get a running app:
+
+**A bundled build** (what the release zip contains): .NET and the GTK runtime are copied next to
+the exe, so it starts from anywhere with no `PATH` setup.
+
+```powershell
+make publish-windows                  # with PowerShell 7 (pwsh)
+make publish-windows PWSH=powershell  # with only Windows PowerShell 5.1
+out/win-x64/subs2srs.exe
+```
+
+The commands in `.github/workflows/release.yml` do the same and zip the result.
+
+**A development build** (`make build`, `dotnet build`, `dotnet run --project subs2srs`): the
+output under `subs2srs/bin/` contains no GTK, so the GTK directory has to be on `PATH` when the
+app starts:
+
+```powershell
+$env:PATH = "C:\msys64\ucrt64\bin;$env:PATH"
+subs2srs/bin/Release/net10.0/subs2srs.exe
+```
+
+Note that it is `ucrt64\bin`, not `C:\msys64\usr\bin` (the MSYS2 shell tools), which is the one
+people usually already have on `PATH`. To make it permanent, add `C:\msys64\ucrt64\bin` to your
+user `PATH`, preferably near the end: it holds many DLLs that can shadow those of other programs.
+
+`make install` and `make uninstall` are the Linux install targets and do nothing useful on
+Windows.
+
+If the app exits at startup with
+`System.DllNotFoundException: Unable to load DLL 'libgtk-4-1.dll' or one of its dependencies`
+(often preceded by `could not install GLib log writer: Unable to load DLL 'GLib'`), you are
+running a development build without `C:\msys64\ucrt64\bin` on `PATH`. Use one of the two options
+above.
 
 ## Install
 
@@ -123,6 +157,8 @@ yay -S subs2srs-gui
 ```
 
 ### Manual
+
+Linux only; on Windows see [Building on Windows](#building-on-windows).
 
 ```sh
 git clone https://github.com/ajatt-tools/subs2srs.git
