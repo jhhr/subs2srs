@@ -42,6 +42,10 @@
 - GLib/GTK warnings are forwarded into the log file (the Windows build has no console).
 - Preferences and logs use `%APPDATA%\subs2srs` / `%LOCALAPPDATA%\subs2srs\Logs` on Windows.
 
+**Subs Re-Timer** (Tools tab):
+- New entry that launches the external [subsretimer](https://github.com/jhhr/subsretimer) tool with the main window's Subs1/Subs2 files, lets you choose which file is the reference and whether to auto-align headlessly, and offers to use the re-timed file in the main window afterwards. The button is disabled with a hint when `subsretimer` is not on `PATH` or in the *Tools Directory*.
+- Preferences `SubsRetimerReferenceIsSubs2` and `SubsRetimerAuto` remember the launcher's last choices. The unused `PathSubsReTimerFull` constant from the Mono port is replaced by `PathSubsRetimerExeFull`.
+
 **Bug fixes**:
 - Choosing a legacy subtitle encoding (Shift-JIS, GBK, EUC-KR, Windows-125x, …) threw `ArgumentException`; the code-page encoding provider is now registered.
 - ffmpeg progress parsing used the current culture for decimals and failed on systems with a `,` decimal separator.

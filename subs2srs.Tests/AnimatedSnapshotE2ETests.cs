@@ -40,22 +40,34 @@ namespace subs2srs.Tests
             return frames;
         }
 
-        /// <summary>Frames counted by decoding with ffprobe (works for avif).</summary>
+        /// <summary>
+        /// Frames counted by decoding with ffprobe (works for avif). An animated avif
+        /// carries a one-frame still primary item next to the animation track; ffmpeg
+        /// 7.1+ exposes that item as its own (first) video stream, so every video
+        /// stream is counted and the largest count is the animation's.
+        /// </summary>
         internal static int ProbeFrameCount(string file)
         {
             var psi = new ProcessStartInfo
             {
                 FileName = ConstantSettings.ResolveToolOrName("ffprobe"),
-                Arguments = $"-v error -count_frames -select_streams v:0 -show_entries stream=nb_read_frames -of csv=p=0 \"{file}\"",
+                Arguments = $"-v error -count_frames -select_streams v -show_entries stream=nb_read_frames -of csv=p=0 \"{file}\"",
                 UseShellExecute = false,
                 RedirectStandardOutput = true,
                 RedirectStandardError = true,
                 CreateNoWindow = true,
             };
             using var p = Process.Start(psi)!;
-            string output = p.StandardOutput.ReadToEnd().Trim();
+            string output = p.StandardOutput.ReadToEnd();
             p.WaitForExit();
-            return int.Parse(output, CultureInfo.InvariantCulture);
+            var counts = new System.Collections.Generic.List<int>();
+            foreach (string line in output.Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries))
+            {
+                if (int.TryParse(line.Trim().TrimEnd(','), NumberStyles.Integer, CultureInfo.InvariantCulture, out int n))
+                    counts.Add(n);
+            }
+            Assert.True(counts.Count > 0, "ffprobe reported no decodable video stream for " + file + ": " + output);
+            return counts.Max();
         }
 
         private static string AnimatedFile(string tsvLine, string ext)
