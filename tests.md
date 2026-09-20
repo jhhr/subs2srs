@@ -50,19 +50,14 @@ make test
 
 # Individual suite (via dotnet)
 dotnet test subs2srs.Tests/subs2srs.Tests.csproj --filter "FullyQualifiedName~UtilsSubsTests"
+
+# GTK UI tests (needs GTK 4 and a display; see docs/testing.md)
+make test-ui
 ```
 
 ## How they work
 
-### xUnit suites
-All tests use the standard `xunit` package. No external test frameworks.
-- **Parallelization disabled**: `[assembly: CollectionBehavior(DisableTestParallelization = true)]` prevents race conditions on the mutable `Settings.Instance` singleton.
-- **Singleton reset**: `Settings.Instance.reset()` called in constructor and `Dispose()` to isolate test state.
-- **Temp directories**: `Path.GetTempPath()` + `Guid` creates isolated dirs. Cleaned up via `IDisposable.Dispose()`.
-- **Mocking**: External CLI tools (`ffmpeg`, `ffprobe`) are not invoked. File I/O tests use real temp files.
-
-## Test environment
-- All tests create temporary directories via `Path.Combine(Path.GetTempPath(), ...)` and clean up in `Dispose()`
-- No root privileges required
-- No real media files, subtitles, or system paths are touched
-- Tests run sequentially to avoid singleton pollution
+See [docs/testing.md](docs/testing.md): state isolation (`TestScope`, sequential runs), the harness and
+fakes, opt-in live tests, how media output is checked, and the GTK test mechanics. In short: the suites
+marked *ffmpeg* run the real ffmpeg on generated test media in temp directories, nothing in `dotnet test`
+touches the network or the user's real preferences, and tests whose prerequisites are missing skip.
