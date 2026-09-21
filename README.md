@@ -73,9 +73,10 @@ in the *Tools Directory* preference), prefilled with the Subs1 and Subs2
 files from the main window. Choose which file is the reference (the one
 already matching your video), tick *Auto-align* to run the alignment without
 opening the tool's editor, and on success subs2srs offers to put the re-timed
-file into the corresponding field. Until subsretimer's interactive editor is
-ported, leave *Auto-align* ticked; the editor path reports that it is not
-available yet.
+file into the corresponding field. With *Auto-align* off, subsretimer opens
+its editor window on the two files; saving there (Ctrl+S writes
+`<name>_retimed.<ext>`) hands the saved file back the same way, and closing
+without saving leaves the fields untouched.
 
 ## Build
 

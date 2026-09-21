@@ -57,13 +57,10 @@ No labelled data existed when these were chosen. The eval console exists to sett
 ## Deferred features
 
 - **`subsretimer` integration**, in order of value:
-  1. The tool's interactive editor is not ported yet, so the launcher's non-auto path fails with the
-     tool's "use --auto" message. Nothing on the subs2srs side changes when it lands; the contract
-     already covers a window that saves zero or more files.
-  2. Wildcard patterns in Subs1/Subs2 are refused by the dialog. The planned batch mode resolves both
+  1. Wildcard patterns in Subs1/Subs2 are refused by the dialog. The planned batch mode resolves both
      patterns with `UtilsSubs.getSubsFiles`, pairs by index, runs `--auto` per pair behind a progress
      bar and offers to rewrite the pattern to the `_retimed` files.
-  3. Small code follow-ups from the docs review: `SubsRetimerLauncher.RunAsync` builds its own
+  2. Small code follow-ups from the docs review: `SubsRetimerLauncher.RunAsync` builds its own
      `ProcessStartInfo` instead of `UtilsCommon.makeToolStartInfo`, so its pipes are not forced to
      UTF-8 (a non-ASCII saved path on Windows would come back garbled); the two `SubsRetimer*`
      preferences are not in `DialogPref` or `Logger.writeSettingsToLog` (the "five places" rule);

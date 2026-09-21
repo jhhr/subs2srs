@@ -65,8 +65,10 @@ same GirCore packages, loads the assemblies and prints method signatures, tolera
 - External tools: see the end of [architecture.md](architecture.md). ffmpeg is never bundled (size,
   licensing); `MainWindow.CheckExternalTools()` disables Go with an install hint when it is missing.
   `subsretimer` is optional and resolved the same way; the Tools-tab button is disabled with a hint
-  when it is absent. Nothing on Windows has run it yet (the tool has no Windows build or `.exe` name
-  convention beyond what `ResolveTool` assumes).
+  when it is absent. The tool ships a self-contained Windows zip (`subsretimer.exe` plus a GTK bundle
+  made with the same `bundle-gtk.ps1` approach as ours); `ResolveTool` finds it through the *Tools
+  Directory* preference or `PATH`. It is a console executable, so a console window accompanies its
+  editor when started from Explorer; launched from here with the console hidden, it does not.
 - Build paths with `Path.Combine`; several Windows bugs were hard-coded `/` temp paths.
 - The app writes **no log at startup** unless something fails; "a log file exists" is not a liveness
   signal.

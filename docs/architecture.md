@@ -180,7 +180,7 @@ breaking change here):
 | `subsretimer [options] [REFERENCE] [TARGET]`; REFERENCE is the file already timed to the video, TARGET the one to re-time | The dialog's *Reference* radio decides which of Subs1/Subs2 is which; the other side is the one that gets replaced afterwards |
 | Paths are passed after `--` | So a file name starting with `-` cannot be read as an option |
 | `--ref-encoding` / `--target-encoding` take subs2srs **short** encoding names (`utf-8`, `shift_jis`, …) | `InfoEncoding.longToShort` on the main window's dropdown values |
-| `--auto` runs the alignment and saves without a window; without it the tool opens its editor | The *Auto-align* checkbox. Until the tool's editor is ported, non-auto runs exit 1 with a message |
+| `--auto` runs the alignment and saves without a window; without it the tool opens its editor (exit 1 with a message when it cannot open a display) | The *Auto-align* checkbox |
 | `--auto` never overwrites `<TARGET>_retimed.<ext>` unless `--output` names it | A second run on the same pair therefore fails; the error text says so |
 | With `--print-output`, **stdout carries only saved paths**, one per line, flushed on each save; everything else goes to stderr | `ParseResult` takes the last non-empty stdout line as the saved file |
 | Exit `0` = at least one file saved, `2` = nothing saved (editor closed, or a file had no timed lines), `1` = error on stderr; anything else is treated as an error | `Result.Saved` / `NothingSaved` / `Failed`. Exit 0 with an empty stdout counts as nothing saved |
