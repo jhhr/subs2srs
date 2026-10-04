@@ -1,0 +1,111 @@
+{
+  "attachments": [],
+  "chapters": [],
+  "container": {
+    "properties": {
+      "container_type": 17,
+      "date_local": "2026-10-04T19:51:26+00:00",
+      "date_utc": "2026-10-04T19:51:26Z",
+      "duration": 19800000000,
+      "is_providing_timestamps": true,
+      "muxing_application": "libebml v1.4.5 + libmatroska v1.7.1",
+      "segment_uid": "853a3814f4d727a4ffe05eba05443889",
+      "timestamp_scale": 1000000,
+      "writing_application": "mkvmerge v82.0 ('I'm The President') 64-bit"
+    },
+    "recognized": true,
+    "supported": true,
+    "type": "Matroska"
+  },
+  "errors": [],
+  "file_name": "ietf.mkv",
+  "global_tags": [],
+  "identification_format_version": 19,
+  "track_tags": [],
+  "tracks": [
+    {
+      "codec": "SubStationAlpha",
+      "id": 0,
+      "properties": {
+        "codec_id": "S_TEXT/ASS",
+        "codec_private_data": "5b53637269707420496e666f5d0d0a536372697074547970653a2076342e30302b0d0a506c6179526573583a203634300d0a506c6179526573593a203336300d0a0d0a5b56342b205374796c65735d0d0a466f726d61743a204e616d652c20466f6e746e616d652c20466f6e7473697a652c205072696d617279436f6c6f75722c205365636f6e64617279436f6c6f75722c204f75746c696e65436f6c6f75722c204261636b436f6c6f75722c20426f6c642c204974616c69632c20556e6465726c696e652c20537472696b654f75742c205363616c65582c205363616c65592c2053706163696e672c20416e676c652c20426f726465725374796c652c204f75746c696e652c20536861646f772c20416c69676e6d656e742c204d617267696e4c2c204d617267696e522c204d617267696e562c20456e636f64696e670d0a5374796c653a2044656661756c742c417269616c2c32302c264830304646464646462c264830303030303046462c264830303030303030302c264830303030303030302c302c302c302c302c3130302c3130302c302c302c312c322c302c322c31302c31302c31302c310d0a0d0a5b4576656e74735d0d0a466f726d61743a204c617965722c2053746172742c20456e642c205374796c652c204e616d652c204d617267696e4c2c204d617267696e522c204d617267696e562c204566666563742c20546578740d0a0d0a",
+        "codec_private_length": 523,
+        "default_track": true,
+        "enabled_track": true,
+        "encoding": "UTF-8",
+        "forced_track": false,
+        "language": "eng",
+        "language_ietf": "en",
+        "minimum_timestamp": 500000000,
+        "num_index_entries": 6,
+        "number": 1,
+        "text_subtitles": true,
+        "track_name": "English",
+        "uid": 1949504127290215504
+      },
+      "type": "subtitles"
+    },
+    {
+      "codec": "SubRip/SRT",
+      "id": 1,
+      "properties": {
+        "codec_id": "S_TEXT/UTF8",
+        "codec_private_length": 0,
+        "default_track": true,
+        "enabled_track": true,
+        "encoding": "UTF-8",
+        "forced_track": false,
+        "language": "eng",
+        "language_ietf": "en-US",
+        "minimum_timestamp": 500000000,
+        "num_index_entries": 11,
+        "number": 2,
+        "text_subtitles": true,
+        "track_name": "English (US)",
+        "uid": 1379429667644836319
+      },
+      "type": "subtitles"
+    },
+    {
+      "codec": "WebVTT",
+      "id": 2,
+      "properties": {
+        "codec_id": "S_TEXT/WEBVTT",
+        "codec_private_data": "574542565454",
+        "codec_private_length": 6,
+        "default_track": true,
+        "enabled_track": true,
+        "forced_track": false,
+        "language": "eng",
+        "language_ietf": "en",
+        "minimum_timestamp": 500000000,
+        "num_index_entries": 20,
+        "number": 3,
+        "track_name": "English (WebVTT)",
+        "uid": 17272687730253275092
+      },
+      "type": "subtitles"
+    },
+    {
+      "codec": "SubRip/SRT",
+      "id": 3,
+      "properties": {
+        "codec_id": "S_TEXT/UTF8",
+        "codec_private_length": 0,
+        "default_track": true,
+        "enabled_track": true,
+        "encoding": "UTF-8",
+        "forced_track": false,
+        "language": "jpn",
+        "language_ietf": "ja",
+        "minimum_timestamp": 500000000,
+        "num_index_entries": 15,
+        "number": 4,
+        "text_subtitles": true,
+        "uid": 13019792895935961150
+      },
+      "type": "subtitles"
+    }
+  ],
+  "warnings": []
+}

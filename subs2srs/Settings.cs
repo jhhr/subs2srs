@@ -213,11 +213,53 @@ namespace subs2srs
 
     /// <summary>
     /// Resolve an external tool: the Tools Directory preference first,
-    /// then PATH. Returns null when the tool cannot be found.
+    /// then PATH, then for MKVToolNix's tools its install folder
+    /// (<see cref="MkvToolNixDirs"/>). Returns null when the tool cannot be found.
     /// </summary>
     public static string? ResolveTool(string name)
     {
-      return FindToolInDir(ToolsDir, name) ?? FindInPath(name);
+      return FindToolInDir(ToolsDir, name) ?? FindInPath(name) ?? FindInMkvToolNixDirs(name);
+    }
+
+    /// <summary>The tools also looked for in <see cref="MkvToolNixDirs"/>.</summary>
+    private static readonly string[] MkvToolNixTools = { "mkvmerge", "mkvextract", "mkvinfo" };
+
+    /// <summary>
+    /// Test hook: the folders searched for MKVToolNix's tools after PATH, on any OS, instead of
+    /// <see cref="MkvToolNixDirs"/>. Null in normal runs; reset it in the test's Dispose.
+    /// </summary>
+    internal static IReadOnlyList<string>? MkvToolNixDirsOverride { get; set; }
+
+    /// <summary>
+    /// Where MKVToolNix's Windows installer puts mkvmerge, mkvextract and mkvinfo without adding
+    /// the folder to PATH: %ProgramFiles%\MKVToolNix, then %ProgramFiles(x86)%\MKVToolNix.
+    /// None on other systems, where packages put them on PATH.
+    /// </summary>
+    internal static List<string> MkvToolNixDirs(bool isWindows, Func<string, string?> getEnv)
+    {
+      var dirs = new List<string>();
+      if (!isWindows) return dirs;
+      foreach (string variable in new[] { "ProgramFiles", "ProgramFiles(x86)" })
+      {
+        string? root = getEnv(variable)?.Trim();
+        if (string.IsNullOrEmpty(root)) continue;
+        string dir = Path.Combine(root, "MKVToolNix");
+        if (!dirs.Contains(dir, StringComparer.OrdinalIgnoreCase)) dirs.Add(dir);
+      }
+      return dirs;
+    }
+
+    private static string? FindInMkvToolNixDirs(string name)
+    {
+      if (!MkvToolNixTools.Contains(name, StringComparer.OrdinalIgnoreCase)) return null;
+      IReadOnlyList<string> dirs = MkvToolNixDirsOverride
+        ?? MkvToolNixDirs(OperatingSystem.IsWindows(), Environment.GetEnvironmentVariable);
+      foreach (string dir in dirs)
+      {
+        string? found = FindToolInDir(dir, name);
+        if (found != null) return found;
+      }
+      return null;
     }
 
     /// <summary>
@@ -299,6 +341,9 @@ namespace subs2srs
     public static string ExeMkvExtract { get; } = "mkvextract";
     public static string PathMkvExtractExeRel { get; } = "mkvextract";
     public static string PathMkvExtractExeFull => ResolveToolOrName(ExeMkvExtract);
+
+    public static string ExeMkvMerge { get; } = "mkvmerge";
+    public static string PathMkvMergeExeFull => ResolveToolOrName(ExeMkvMerge);
 
     public static string SettingsFilename { get; set; } = Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
