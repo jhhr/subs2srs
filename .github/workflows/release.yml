@@ -47,8 +47,15 @@ jobs:
 
       - name: Publish (self-contained win-x64)
         run: |
+          # Fail on the first native command that fails, not only on the last one.
+          $PSNativeCommandUseErrorActionPreference = $true
           dotnet restore subs2srs/subs2srs.csproj --locked-mode
+          dotnet restore subs2srs.Cli/subs2srs.Cli.csproj --locked-mode
           dotnet publish subs2srs/subs2srs.csproj -c Release -r win-x64 --self-contained true `
+            -p:Version=${{ steps.ver.outputs.version }} -o out\win-x64
+          # subs2srs-cli.exe into the same folder. The files both publish come out identical;
+          # the CLI goes second because it references the app, so its packages cover both.
+          dotnet publish subs2srs.Cli/subs2srs.Cli.csproj -c Release -r win-x64 --self-contained true `
             -p:Version=${{ steps.ver.outputs.version }} -o out\win-x64
 
       - name: Bundle GTK runtime
@@ -63,6 +70,12 @@ jobs:
           $zip = "subs2srs-${{ steps.ver.outputs.version }}-win-x64.zip"
           Compress-Archive -Path out\win-x64\* -DestinationPath $zip -CompressionLevel Optimal
           Get-Item $zip | Select-Object Name, Length
+          Add-Type -AssemblyName System.IO.Compression.FileSystem
+          $z = [IO.Compression.ZipFile]::OpenRead((Resolve-Path $zip).Path)
+          try { $names = @($z.Entries | ForEach-Object { $_.FullName }) } finally { $z.Dispose() }
+          foreach ($exe in 'subs2srs.exe', 'subs2srs-cli.exe') {
+            if ($names -notcontains $exe) { throw "$exe is not in $zip" }
+          }
 
       - uses: actions/upload-artifact@v4
         with:

@@ -1,13 +1,16 @@
 <#
 .SYNOPSIS
   Start a published subs2srs.exe with MSYS2 removed from PATH, check that it stays alive,
-  shows a top-level window and reaches the settings-loading stage, then kill it.
+  shows a top-level window and reaches the settings-loading stage, then kill it. Then run
+  subs2srs-cli.exe from the same folder the same way.
 
 .DESCRIPTION
   Checks:
     1. the process is still running after -Seconds seconds,
     2. it owns a top-level window (GTK initialised and MainWindow was shown),
-    3. %APPDATA%\subs2srs\preferences.json exists (MainWindow.LoadSettings ran).
+    3. %APPDATA%\subs2srs\preferences.json exists (MainWindow.LoadSettings ran),
+    4. subs2srs-cli.exe --version and subs2srs-cli.exe go --help exit 0 and print on stdout
+       (the console apphost shares subs2srs.dll and the runtime with subs2srs.exe).
   Any log-*.txt written to %LOCALAPPDATA%\subs2srs\Logs during the run is printed and scanned
   for GLib criticals.
 
@@ -16,7 +19,7 @@
   exist (the app writes defaults only when the file is missing).
 
 .PARAMETER PublishDir
-  Directory containing subs2srs.exe with the GTK runtime bundled.
+  Directory containing subs2srs.exe and subs2srs-cli.exe with the GTK runtime bundled.
 
 .PARAMETER TimeoutSeconds
   How long to wait for the main window to appear (default 60). A cold start right after
@@ -35,6 +38,8 @@ param(
 $ErrorActionPreference = 'Stop'
 $exe = Join-Path (Resolve-Path $PublishDir) 'subs2srs.exe'
 if (-not (Test-Path $exe)) { throw "not found: $exe" }
+$cliExe = Join-Path (Split-Path $exe) 'subs2srs-cli.exe'
+if (-not (Test-Path $cliExe)) { throw "not found: $cliExe" }
 
 $prefs = Join-Path ([Environment]::GetFolderPath('ApplicationData')) 'subs2srs\preferences.json'
 $logDir = Join-Path ([Environment]::GetFolderPath('LocalApplicationData')) 'subs2srs\Logs'
@@ -102,4 +107,30 @@ if (-not $prefsExistedBefore -and $prefsNow) {
 if (-not $alive) { throw "subs2srs.exe exited early (code $($p.ExitCode))" }
 if (-not $hasWindow) { throw "subs2srs.exe showed no top-level window within $TimeoutSeconds s" }
 if (-not $prefsNow) { throw 'preferences.json was not created: MainWindow.LoadSettings did not run' }
+
+# Run subs2srs-cli.exe (with the PATH above) and require exit 0 and a stdout line matching
+# $expect. Through Start-Process with both streams in files, because Windows PowerShell 5.1
+# turns a native command's redirected stderr into a terminating error under
+# ErrorActionPreference=Stop. The CLI writes UTF-8 when its streams are redirected.
+function Invoke-Cli([string[]]$arguments, [string]$expect) {
+    $outFile = [IO.Path]::GetTempFileName()
+    $errFile = [IO.Path]::GetTempFileName()
+    try {
+        $c = Start-Process -FilePath $cliExe -ArgumentList $arguments -WorkingDirectory (Split-Path $cliExe) `
+            -NoNewWindow -Wait -PassThru -RedirectStandardOutput $outFile -RedirectStandardError $errFile
+        $out = @(Get-Content -LiteralPath $outFile -Encoding UTF8)
+        $err = @(Get-Content -LiteralPath $errFile -Encoding UTF8)
+    } finally {
+        Remove-Item -LiteralPath $outFile, $errFile -Force -ErrorAction SilentlyContinue
+    }
+    $shown = 'subs2srs-cli ' + ($arguments -join ' ')
+    Write-Host ("{0,-24}: exit {1}, {2} stdout line(s), {3} stderr line(s)" -f $shown, $c.ExitCode, $out.Count, $err.Count)
+    $out | Select-Object -First 3 | ForEach-Object { Write-Host "    $_" }
+    foreach ($line in $err) { Write-Warning "stderr: $line" }
+    if ($c.ExitCode -ne 0) { throw "$shown exited with code $($c.ExitCode)" }
+    if (@($out -match $expect).Count -eq 0) { throw "$shown printed no line matching '$expect' on stdout" }
+}
+
+Invoke-Cli @('--version') '^subs2srs-cli \d'
+Invoke-Cli @('go', '--help') '^usage: subs2srs-cli go '
 Write-Host 'Smoke test passed.' -ForegroundColor Green
