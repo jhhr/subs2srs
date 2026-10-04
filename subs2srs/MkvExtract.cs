@@ -130,7 +130,7 @@ namespace subs2srs
         {
           "--output-charset", "UTF-8", mkv, "tracks", trackId.ToString(CultureInfo.InvariantCulture) + ":" + output,
         });
-        result = await (RunnerOverride ?? MkvTracks.RunAsync)(psi, ct).ConfigureAwait(false);
+        result = await (RunnerOverride ?? UtilsCommon.RunToolAsync)(psi, ct).ConfigureAwait(false);
       }
       catch (OperationCanceledException)
       {

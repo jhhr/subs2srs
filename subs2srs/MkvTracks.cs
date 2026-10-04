@@ -10,7 +10,6 @@
 
 using System;
 using System.Collections.Generic;
-using System.ComponentModel;
 using System.Diagnostics;
 using System.Globalization;
 using System.IO;
@@ -299,7 +298,7 @@ namespace subs2srs
       {
         // A full path, so a name starting with '@' or '-' is not read as an option.
         ProcessStartInfo psi = StartInfo(exe, new[] { "--output-charset", "UTF-8", "-J", Path.GetFullPath(mkvFile) });
-        result = await (RunnerOverride ?? RunAsync)(psi, ct).ConfigureAwait(false);
+        result = await (RunnerOverride ?? UtilsCommon.RunToolAsync)(psi, ct).ConfigureAwait(false);
       }
       catch (Exception ex) when (ex is not OperationCanceledException)
       {
@@ -356,38 +355,5 @@ namespace subs2srs
 
     private static string? LastLine(string text)
       => text.Split('\n').Select(l => l.Trim()).LastOrDefault(l => l.Length > 0);
-
-    /// <summary>
-    /// Runs an MKVToolNix tool to its end. A cancel kills it and waits (a few seconds at most)
-    /// for it to exit, so a file it was writing is closed when the cancel reaches the caller.
-    /// </summary>
-    internal static async Task<CliProcessResult> RunAsync(ProcessStartInfo psi, CancellationToken ct)
-    {
-      using var process = new Process { StartInfo = psi };
-      process.Start();
-      Task<string> stdout = process.StandardOutput.ReadToEndAsync(CancellationToken.None);
-      Task<string> stderr = process.StandardError.ReadToEndAsync(CancellationToken.None);
-      try
-      {
-        await process.WaitForExitAsync(ct).ConfigureAwait(false);
-      }
-      catch (OperationCanceledException)
-      {
-        try
-        {
-          process.Kill(entireProcessTree: true);
-          process.WaitForExit(5000);
-        }
-        catch (InvalidOperationException) { }
-        catch (Win32Exception) { }
-        throw;
-      }
-      return new CliProcessResult
-      {
-        ExitCode = process.ExitCode,
-        Stdout = await stdout.ConfigureAwait(false),
-        Stderr = await stderr.ConfigureAwait(false),
-      };
-    }
   }
 }

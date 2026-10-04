@@ -224,11 +224,21 @@ namespace subs2srs
       _spinner.Start();
       _lblStatus.SetText(_chkAuto.GetActive() ? "Aligning..." : "Subs Re-Timer is open. Save there to continue.");
 
-      var result = await SubsRetimerLauncher.RunAsync(request, _cts.Token);
+      // Closing this window is the only cancel. It stops an auto-align; the editor is left
+      // open (killing it would lose unsaved work there) and only the waiting stops.
+      SubsRetimerLauncher.Result? result = null;
+      try
+      {
+        result = request.Auto
+          ? await SubsRetimerLauncher.RunAsync(request, _cts.Token)
+          : await SubsRetimerLauncher.RunAsync(request).WaitAsync(_cts.Token);
+      }
+      catch (OperationCanceledException) { }
 
       _spinner.Stop();
       _running = false;
       _cts = null;
+      if (result == null) return;
 
       if (result.Saved)
       {

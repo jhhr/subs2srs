@@ -1,0 +1,22 @@
+{
+  "version": 1,
+  "reference": {
+    "path": "/home/user/Anime/アニメ S1/s2s/第3話.en.srt",
+    "lineCount": 120,
+    "encoding": "utf-8"
+  },
+  "target": {
+    "path": "/home/user/Anime/アニメ S1/第3話.srt",
+    "lineCount": 0,
+    "encoding": "utf-8"
+  },
+  "output": "/home/user/Anime/アニメ S1/s2s/第3話.ja.srt",
+  "segments": [],
+  "referenceCoverage": null,
+  "targetMatched": null,
+  "averageMismatchSeconds": null,
+  "minMatch": null,
+  "exitCode": 2,
+  "saved": null,
+  "reason": "no timed lines"
+}

@@ -20,10 +20,13 @@
 
 using System;
 using System.Collections.Generic;
+using System.ComponentModel;
 using System.Diagnostics;
 using System.IO;
 using System.Linq;
 using System.Text;
+using System.Threading;
+using System.Threading.Tasks;
 
 namespace subs2srs
 {
@@ -192,6 +195,42 @@ namespace subs2srs
       if (redirectStdout) psi.StandardOutputEncoding = new UTF8Encoding(false);
       if (redirectStderr) psi.StandardErrorEncoding = new UTF8Encoding(false);
       return psi;
+    }
+
+    /// <summary>
+    /// Runs a tool (both pipes redirected, as <see cref="makeToolStartInfo"/> sets them) to its
+    /// end and returns its exit code and output. A cancel kills it, with its children, and waits
+    /// (a few seconds at most) for it to exit, so a file it was writing is closed when the
+    /// <see cref="OperationCanceledException"/> reaches the caller. Used for the MKVToolNix tools
+    /// and <c>subsretimer</c>.
+    /// </summary>
+    internal static async Task<CliProcessResult> RunToolAsync(ProcessStartInfo psi, CancellationToken ct)
+    {
+      using var process = new Process { StartInfo = psi };
+      process.Start();
+      Task<string> stdout = process.StandardOutput.ReadToEndAsync(CancellationToken.None);
+      Task<string> stderr = process.StandardError.ReadToEndAsync(CancellationToken.None);
+      try
+      {
+        await process.WaitForExitAsync(ct).ConfigureAwait(false);
+      }
+      catch (OperationCanceledException)
+      {
+        try
+        {
+          process.Kill(entireProcessTree: true);
+          process.WaitForExit(5000);
+        }
+        catch (InvalidOperationException) { }
+        catch (Win32Exception) { }
+        throw;
+      }
+      return new CliProcessResult
+      {
+        ExitCode = process.ExitCode,
+        Stdout = await stdout.ConfigureAwait(false),
+        Stderr = await stderr.ConfigureAwait(false),
+      };
     }
 
     private static IEnumerable<string> getFFmpegPaths()

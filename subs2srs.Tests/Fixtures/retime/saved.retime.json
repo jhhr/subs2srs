@@ -1,0 +1,54 @@
+{
+  "version": 1,
+  "reference": {
+    "path": "/home/user/Anime/アニメ S1/s2s/第1話.en.srt",
+    "lineCount": 120,
+    "encoding": "utf-8"
+  },
+  "target": {
+    "path": "/home/user/Anime/アニメ S1/第1話.srt",
+    "lineCount": 114,
+    "encoding": "utf-8"
+  },
+  "output": "/home/user/Anime/アニメ S1/s2s/第1話.ja.srt",
+  "segments": [
+    {
+      "firstLine": 1,
+      "lastLine": 40,
+      "offsetMs": 0,
+      "matchedLines": 40,
+      "lineCount": 40
+    },
+    {
+      "firstLine": 41,
+      "lastLine": 114,
+      "offsetMs": -15000,
+      "matchedLines": 74,
+      "lineCount": 74
+    }
+  ],
+  "referenceCoverage": {
+    "covered": 114,
+    "counted": 120,
+    "share": 0.95
+  },
+  "targetMatched": {
+    "matched": 114,
+    "lineCount": 114,
+    "share": 1
+  },
+  "averageMismatchSeconds": {
+    "before": {
+      "all": 0.6421842105263157,
+      "matched": 0.5582056074766356
+    },
+    "after": {
+      "all": 0,
+      "matched": 0
+    }
+  },
+  "minMatch": 0.8,
+  "exitCode": 0,
+  "saved": "/home/user/Anime/アニメ S1/s2s/第1話.ja.srt",
+  "reason": null
+}
