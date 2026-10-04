@@ -61,7 +61,7 @@ namespace subs2srs
       public bool Failed => !Saved && !NothingSaved;
     }
 
-    /// <summary>True when the executable was found on PATH at startup.</summary>
+    /// <summary>True when the executable is found in the Tools Directory or on PATH, looked up on every call.</summary>
     public static bool IsAvailable => File.Exists(ConstantSettings.PathSubsRetimerExeFull);
 
     /// <summary>Test hook: replaces the process run (gets the start info, returns what the tool would have).</summary>
