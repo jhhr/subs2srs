@@ -12,8 +12,8 @@ namespace subs2srs.Tests
 {
   /// <summary>
   /// subs2srs-cli through <see cref="CliRunner.RunAsync"/> in-process, and once as the built
-  /// console. In this phase <c>go</c> resolves and prints the episode list and runs the checks
-  /// before starting (<c>--dry-run</c>), and refuses to run. <see cref="EpisodeListTests"/>
+  /// console: <c>go --dry-run</c> (the episode list and the checks before starting) and
+  /// <c>go</c>'s runs of the pipeline, their table and exit codes. <see cref="EpisodeListTests"/>
   /// covers the list itself, <see cref="GoChecksTests"/> the checks.
   /// </summary>
   public class CliTests
@@ -88,6 +88,7 @@ namespace subs2srs.Tests
     [InlineData("--season needs a value", "go", "--project", "p.json", "--season", "--dry-run")]
     [InlineData("unknown argument '--bogus'", "go", "--project", "p.json", "--bogus")]
     [InlineData("cannot be combined", "go", "--project", "p.json", "--prefs", "x.json", "--no-prefs")]
+    [InlineData("--grouping takes rules or off, not 'ai'", "go", "--project", "p.json", "--grouping", "ai")]
     public async Task UsageErrors_Exit1_OnStderr(string expected, params string[] args)
     {
       using var scope = new TestScope();
@@ -101,14 +102,18 @@ namespace subs2srs.Tests
     [Fact]
     public void Parse_ReadsEveryOption()
     {
-      CliOptions o = CliOptions.Parse(new[] { "go", "--project", "p 日本.json", "--season", "D:\\Show [S1]", "--dry-run", "--yes", "--verbose", "--prefs", "x.json" });
+      CliOptions o = CliOptions.Parse(new[] { "go", "--project", "p 日本.json", "--season", "D:\\Show [S1]", "--dry-run", "--yes", "--verbose", "--prefs", "x.json", "--grouping", "Rules" });
       Assert.Equal("go", o.Command);
       Assert.Equal("p 日本.json", o.ProjectPath);
       Assert.Equal("D:\\Show [S1]", o.SeasonDir);
       Assert.True(o.DryRun && o.Yes && o.Verbose);
       Assert.Equal("x.json", o.PrefsPath);
       Assert.False(o.NoPrefs);
-      Assert.True(CliOptions.Parse(new[] { "go", "--project", "p", "--no-prefs" }).NoPrefs);
+      Assert.Equal(SnippetMode.Rules, o.Grouping);
+      CliOptions plain = CliOptions.Parse(new[] { "go", "--project", "p", "--no-prefs", "--grouping", "off" });
+      Assert.True(plain.NoPrefs);
+      Assert.Equal(SnippetMode.Off, plain.Grouping);
+      Assert.Null(CliOptions.Parse(new[] { "go", "--project", "p" }).Grouping);
     }
 
     [Fact]
@@ -216,21 +221,6 @@ namespace subs2srs.Tests
       Assert.Contains(r.Stderr.Split(Environment.NewLine), l => l.StartsWith("4  [Grp] Show - 04.ja.srt", StringComparison.Ordinal) && l.Contains(" -  "));
     }
 
-    [Fact]
-    public async Task Go_WithoutDryRun_IsNotBuiltYet()
-    {
-      using var scope = new TestScope();
-      string project = SaveProject(scope);
-      string season = MakeSeason(scope, SeasonMissingJp);
-
-      Result r = await Run("go", "--project", project, "--season", season, "--no-prefs");
-
-      Assert.True(r.Code == CliOptions.ExitError, r.ToString());
-      Assert.Contains("not built yet", r.Stderr);
-      Assert.Equal("", r.Stdout);
-      Assert.Empty(Directory.GetFileSystemEntries(scope.OutputDir));
-    }
-
     /// <summary>
     /// The checks run after the list: each error on stderr under the table, exit 1. Snippets
     /// grouped by AI through <c>claude</c> need it whatever the AI Grouping On Go preference says
@@ -328,6 +318,226 @@ namespace subs2srs.Tests
       Assert.True(audio.Code == CliOptions.ExitError, audio.ToString());
       Assert.Contains("audio files", audio.Stderr);
       Assert.Equal("", audio.Stdout);
+    }
+
+    // ── go: the run ─────────────────────────────────────────────────────
+
+    /// <summary>
+    /// A project for a short real run: audio clips from the video and snapshots (no video
+    /// clips or animated snapshots), snippets grouped by the rules.
+    /// </summary>
+    private static string SaveRunProject(TestScope scope, Action<Settings>? edit = null) => SaveProject(scope, s =>
+    {
+      s.Subs[0].Encoding = "utf-8";
+      s.Subs[1].Encoding = "utf-8";
+      s.AudioClips.Enabled = true;
+      s.AudioClips.UseAudioFromVideo = true;
+      s.AudioClips.UseExistingAudio = false;
+      s.AudioClips.AudioFormat = "MP3";
+      s.AudioClips.Bitrate = 64;
+      s.AudioClips.Normalize = false;
+      s.AudioClips.PadEnabled = false;
+      s.VideoClips.AudioStream = new InfoStream("0:a:0", "0", "", "Default"); // as the GUI saves it
+      s.Snapshots.Enabled = true;
+      s.VideoClips.Enabled = false;
+      s.AnimatedSnapshots.Enabled = false;
+      s.Snippets.Mode = SnippetMode.Rules;
+      s.EpisodeStartNumber = 1;
+      edit?.Invoke(s);
+    });
+
+    /// <summary>
+    /// The test video as <paramref name="dir"/>/<paramref name="name"/>.mkv (ffmpeg reads it by
+    /// its content), and the dialogue as its .ja and its .en file in <paramref name="subsDir"/>:
+    /// the rules group its four lines into three cards.
+    /// </summary>
+    private static void RealEpisode(string dir, string subsDir, string name, bool ja = true, bool en = true)
+    {
+      File.Copy(TestMedia.VideoPath, Path.Combine(dir, name + ".mkv"), overwrite: true);
+      if (ja) File.Move(TestMedia.WriteDialogueSrt(dir), Path.Combine(subsDir, name + ".ja.srt"));
+      if (en) File.Move(TestMedia.WriteDialogueTranslationSrt(dir), Path.Combine(subsDir, name + ".en.srt"));
+    }
+
+    /// <summary>The tag (first column) of every card in the TSV.</summary>
+    private static string[] Tags(string tsv)
+      => File.ReadAllLines(tsv, Encoding.UTF8).Where(l => l.Length > 0).Select(l => l.Split('\t')[0]).ToArray();
+
+    /// <summary>
+    /// Ten videos, so the names are padded to two digits; only episodes 1 and 3 have both
+    /// subtitles (2 lacks its .ja file, 4 to 10 have none and are empty files, never read). The
+    /// two run in one pipeline under their own numbers, padded for the season's ten episodes as
+    /// a run of all ten would pad them, not for the two that ran.
+    /// </summary>
+    [RequiresFfmpegFact]
+    public async Task Go_Season_WithEpisode2sJapaneseFileMissing_Exits3_AndMakesTheOthersCardsUnderTheirNumbers()
+    {
+      await TestMedia.EnsureAsync();
+      using var scope = new TestScope(" ä 日本");
+      string project = SaveRunProject(scope);
+      string season = MakeSeason(scope, Enumerable.Range(4, 7).Select(n => $"[Grp] 進撃 - {n:00}.mkv").ToArray());
+      string subs = Path.Combine(season, "s2s");
+      RealEpisode(season, subs, "[Grp] 進撃 - 01");
+      RealEpisode(season, subs, "[Grp] 進撃 - 02", ja: false);
+      RealEpisode(season, subs, "[Grp] 進撃 - 03");
+
+      Result r = await Run("go", "--project", project, "--season", season, "--no-prefs");
+
+      Assert.True(r.Code == CliOptions.ExitSkipped, r.ToString());
+      string[][] rows = r.Lines.Select(EpisodeListTests.Cells).ToArray();
+      Assert.Equal(new[] { "#", "Episode", "Status", "Cards" }, rows[0]);
+      Assert.Equal(new[] { "1", "[Grp] 進撃 - 01", "done", "3" }, rows[1]);
+      Assert.Equal(new[] { "2", "[Grp] 進撃 - 02", "skipped: no .ja file", "-" }, rows[2]);
+      Assert.Equal(new[] { "3", "[Grp] 進撃 - 03", "done", "3" }, rows[3]);
+      Assert.Equal(new[] { "10", "[Grp] 進撃 - 10", "skipped: no .ja file; no .en file", "-" }, rows[10]);
+      string tsv = Path.Combine(scope.OutputDir, "Show.tsv");
+      Assert.Equal($"season TSV: {tsv} (2 of 10 episodes); exit 3", r.Lines[11]);
+      Assert.Equal(12, r.Lines.Length);
+
+      Assert.Equal(new[] { "Show_01", "Show_01", "Show_01", "Show_03", "Show_03", "Show_03" }, Tags(tsv));
+      string[] media = Directory.GetFiles(Path.Combine(scope.OutputDir, "Show.media")).Select(f => Path.GetFileName(f)).ToArray();
+      Assert.Equal(12, media.Length); // an mp3 and a jpg per card
+      Assert.All(media, m => Assert.True(m.StartsWith("Show_01_", StringComparison.Ordinal) || m.StartsWith("Show_03_", StringComparison.Ordinal), m));
+      Assert.Contains(media, m => m.StartsWith("Show_03_", StringComparison.Ordinal) && m.EndsWith(".mp3", StringComparison.Ordinal));
+      // Progress on stderr, a line per step.
+      Assert.Contains("Step 1 of 7: Combine subs", r.Stderr.Split(Environment.NewLine));
+      Assert.Contains($"10 episode(s) in {season}: 2 ready, 8 skipped.", r.Stderr);
+    }
+
+    /// <summary>
+    /// The project's patterns, equal counts: exit 0. The project groups by AI with the AI Grouping
+    /// On Go preference on; <c>--grouping rules</c> keeps the pipeline's own AI step from running.
+    /// </summary>
+    [RequiresFfmpegFact]
+    public async Task Go_Patterns_WithEqualCounts_Exits0_AndGroupingRules_KeepsTheModelOut()
+    {
+      await TestMedia.EnsureAsync();
+      using var scope = new TestScope(" ä 日本");
+      string dir = Path.Combine(scope.TempDir, "Show 日本");
+      Directory.CreateDirectory(dir);
+      RealEpisode(dir, dir, "ep 01");
+      RealEpisode(dir, dir, "ep 02");
+      string project = SaveRunProject(scope, s =>
+      {
+        s.Subs[0].FilePattern = Path.Combine(dir, "*.ja.srt");
+        s.Subs[1].FilePattern = Path.Combine(dir, "*.en.srt");
+        s.VideoClips.FilePattern = Path.Combine(dir, "*.mkv");
+        s.Snippets.Mode = SnippetMode.AI;
+        s.Snippets.AiModel = "fake-model";
+      });
+      ConstantSettings.AiGroupingOnGo = true; // kept by --no-prefs
+      var fake = new FakeChatProvider(answer: FakeChatProvider.JoinAll());
+      using var _ = fake.Install();
+
+      Result r = await Run("go", "--project", project, "--grouping", "rules", "--no-prefs");
+
+      Assert.True(r.Code == CliOptions.ExitOk, r.ToString());
+      Assert.Empty(fake.Requests);
+      string[][] rows = r.Lines.Select(EpisodeListTests.Cells).ToArray();
+      Assert.Equal(new[] { "1", "ep 01", "done", "3" }, rows[1]); // the model would join all four
+      Assert.Equal(new[] { "2", "ep 02", "done", "3" }, rows[2]);
+      string tsv = Path.Combine(scope.OutputDir, "Show.tsv");
+      Assert.Equal($"TSV: {tsv} (2 of 2 episodes); exit 0", r.Lines[3]);
+      Assert.Equal(new[] { "Show_1", "Show_1", "Show_1", "Show_2", "Show_2", "Show_2" }, Tags(tsv));
+    }
+
+    /// <summary>
+    /// A text file as the video: the audio step fails after the TSV is written. The result's
+    /// message, exit 1, and the TSV, whose cards lack their media, deleted.
+    /// </summary>
+    [RequiresFfmpegFact]
+    public async Task Go_WhenAStepFails_Exits1_WithItsMessage_AndDeletesTheUnfinishedTsv()
+    {
+      await TestMedia.EnsureAsync();
+      using var scope = new TestScope();
+      string project = SaveRunProject(scope);
+      string season = MakeSeason(scope);
+      RealEpisode(season, Path.Combine(season, "s2s"), "a");
+      File.WriteAllText(Path.Combine(season, "a.mkv"), "This is not a video.");
+
+      Result r = await Run("go", "--project", project, "--season", season, "--no-prefs");
+
+      Assert.True(r.Code == CliOptions.ExitError, r.ToString());
+      string tsv = Path.Combine(scope.OutputDir, "Show.tsv");
+      string[] errors = r.Stderr.Split(Environment.NewLine);
+      Assert.Contains(errors, l => l.StartsWith("subs2srs-cli: Generate audio clips failed: ffmpeg exited with code ", StringComparison.Ordinal));
+      Assert.Contains($"subs2srs-cli: deleted {tsv}: the run stopped after writing it, before the media of its cards were made.", errors);
+      Assert.False(File.Exists(tsv));
+      Assert.Equal(new[] { "1", "a", "failed", "-" }, EpisodeListTests.Cells(r.Lines[1]));
+      Assert.Equal("season TSV: not written (0 of 1 episodes); exit 1", r.Lines[2]);
+    }
+
+    /// <summary>Nothing is ready: the table, exit 3, and the pipeline never starts (no ffmpeg needed).</summary>
+    [Fact]
+    public async Task Go_WithNoEpisodeReady_PrintsTheTable_Exits3_AndMakesNothing()
+    {
+      using var scope = new TestScope();
+      string project = SaveRunProject(scope);
+      string season = MakeSeason(scope, "a.mkv", "b.mkv", "s2s/b.ja.srt");
+
+      Result r = await Run("go", "--project", project, "--season", season, "--no-prefs");
+
+      Assert.True(r.Code == CliOptions.ExitSkipped, r.ToString());
+      Assert.Equal(new[] { "1", "a", "skipped: no .ja file; no .en file", "-" }, EpisodeListTests.Cells(r.Lines[1]));
+      Assert.Equal(new[] { "2", "b", "skipped: no .en file", "-" }, EpisodeListTests.Cells(r.Lines[2]));
+      Assert.Equal("season TSV: not written (0 of 2 episodes); exit 3", r.Lines[3]);
+      Assert.Empty(Directory.GetFileSystemEntries(scope.OutputDir));
+    }
+
+    /// <summary>A failed check stops go before the run: the errors on stderr, exit 1, nothing made.</summary>
+    [Fact]
+    public async Task Go_WithAFailedCheck_Exits1_AndMakesNothing()
+    {
+      using var scope = new TestScope();
+      FakeFfmpeg(scope);
+      string project = SaveRunProject(scope, s => s.DeckName = "");
+      string season = MakeSeason(scope, SeasonMissingJp);
+
+      Result r = await Run("go", "--project", project, "--season", season, "--no-prefs");
+
+      Assert.True(r.Code == CliOptions.ExitError, r.ToString());
+      Assert.Contains("error: Please provide Deck Name.", r.Stderr.Split(Environment.NewLine));
+      Assert.Contains("subs2srs-cli: nothing was made: the checks before starting found the errors above.", r.Stderr);
+      Assert.Equal("", r.Stdout);
+      Assert.Empty(Directory.GetFileSystemEntries(scope.OutputDir));
+    }
+
+    /// <summary>
+    /// A warning of the checks (the audio stream is missing from both videos) is a question
+    /// that only <c>--yes</c> answers yes: without it go stops before the run.
+    /// </summary>
+    [RequiresFfmpegFact]
+    public async Task Go_AtAWarning_WithoutYes_Exits1_AndMakesNothing()
+    {
+      await TestMedia.EnsureAsync();
+      using var scope = new TestScope();
+      string project = SaveRunProject(scope, s => s.VideoClips.AudioStream = new InfoStream("0:2", "1", "", ""));
+      string season = MakeSeason(scope);
+      RealEpisode(season, Path.Combine(season, "s2s"), "a");
+      RealEpisode(season, Path.Combine(season, "s2s"), "b");
+
+      Result r = await Run("go", "--project", project, "--season", season, "--no-prefs");
+
+      Assert.True(r.Code == CliOptions.ExitError, r.ToString());
+      Assert.Contains("subs2srs-cli: nothing was made: the answer to the warning above was no; with --yes go answers yes and goes on.", r.Stderr);
+      Assert.Equal("", r.Stdout);
+      Assert.Empty(Directory.GetFileSystemEntries(scope.OutputDir));
+    }
+
+    /// <summary>Snippet mode AI needs the AI pre-pass, which go does not have yet: refused before anything is read or written.</summary>
+    [Fact]
+    public async Task Go_InAiMode_WithoutGrouping_IsRefused()
+    {
+      using var scope = new TestScope();
+      string project = SaveRunProject(scope, s => s.Snippets.Mode = SnippetMode.AI);
+      string season = MakeSeason(scope, SeasonMissingJp);
+
+      Result r = await Run("go", "--project", project, "--season", season, "--no-prefs");
+
+      Assert.True(r.Code == CliOptions.ExitError, r.ToString());
+      Assert.Contains("go cannot ask the model yet", r.Stderr);
+      Assert.Contains("--grouping rules", r.Stderr);
+      Assert.Equal("", r.Stdout);
+      Assert.Empty(Directory.GetFileSystemEntries(scope.OutputDir));
     }
 
     // ── preferences ─────────────────────────────────────────────────────

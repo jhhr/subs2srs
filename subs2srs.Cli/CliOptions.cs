@@ -13,9 +13,9 @@ namespace subs2srs.Cli
   /// <summary>Command line of subs2srs-cli (see <see cref="Usage"/>).</summary>
   internal sealed class CliOptions
   {
-    /// <summary>Every episode resolved (and, once <c>go</c> runs the pipeline, done).</summary>
+    /// <summary>Every episode done (with <c>--dry-run</c>: resolved).</summary>
     public const int ExitOk = 0;
-    /// <summary>A usage error, or an error before any work.</summary>
+    /// <summary>A usage error, an error before any work, or a step of the run failed.</summary>
     public const int ExitError = 1;
     /// <summary>Some episodes were skipped; the table says why.</summary>
     public const int ExitSkipped = 3;
@@ -26,6 +26,8 @@ namespace subs2srs.Cli
     /// <summary>Null = the project's own file patterns.</summary>
     public string? SeasonDir { get; set; }
     public bool DryRun { get; set; }
+    /// <summary><c>--grouping</c>: the snippet mode for this run instead of the project's; null = the project's.</summary>
+    public SnippetMode? Grouping { get; set; }
     public bool Yes { get; set; }
     public bool Verbose { get; set; }
     public bool NoPrefs { get; set; }
@@ -51,6 +53,9 @@ encodings, audio, snapshots, deck name and output directory.
                     after the project's Episode End # are left out. Audio clips come
                     from the videos.
   --dry-run         print the episode list and the checks before starting, and stop
+  --grouping <mode> group the lines into snippets by this mode instead of the
+                    project's: rules or off. Needed when the project groups by AI: go
+                    cannot ask the model yet.
   --yes             answer yes when asked to confirm (the answer is no otherwise),
                     as at a warning of the checks
   --prefs <file>    read this preferences JSON file instead of the user's preferences.json
@@ -63,13 +68,15 @@ Without --season, the files of the project's patterns are paired by position, as
 the GUI, and counts that differ are refused. The checks before starting are the GUI's
 Go's: the output directory can be written, a deck name, ffmpeg (and the encoder of
 animated snapshots), claude when snippets are grouped by AI through it, and the same
-audio stream in every video (a warning). The episode list goes to stdout and
-everything else to stderr. Preferences are read, never written.
+audio stream in every video (a warning). Then go makes the cards of every ready
+episode in one run, into one import file (TSV), and prints a table: each episode,
+done, skipped and why, or failed, and its cards; then the TSV's path. The table (with
+--dry-run, the episode list) goes to stdout and everything else, the progress
+included, to stderr. Preferences are read, never written.
 
-Not built yet: go without --dry-run.
-
-Exit codes: 0 every episode resolved, 3 some episodes skipped, 1 error before any work
-(usage, project, folder, file counts, a failed check), 130 cancelled.";
+Exit codes: 0 every episode done (with --dry-run: resolved), 3 some episodes skipped,
+1 an error before any work (usage, project, folder, file counts, a failed check, no
+to a warning) or a step of the run failed, 130 cancelled.";
 
     public static CliOptions Parse(string[] args)
     {
@@ -95,6 +102,7 @@ Exit codes: 0 every episode resolved, 3 some episodes skipped, 1 error before an
           case "--project": o.ProjectPath = Next(); break;
           case "--season": o.SeasonDir = Next(); break;
           case "--dry-run": o.DryRun = true; break;
+          case "--grouping": o.Grouping = ParseGrouping(Next()); break;
           case "--yes": o.Yes = true; break;
           case "--prefs": o.PrefsPath = Next(); break;
           case "--no-prefs": o.NoPrefs = true; break;
@@ -110,5 +118,12 @@ Exit codes: 0 every episode resolved, 3 some episodes skipped, 1 error before an
       if (o.NoPrefs && o.PrefsPath != null) throw new CliException("--prefs and --no-prefs cannot be combined");
       return o;
     }
+
+    private static SnippetMode ParseGrouping(string value) => value.ToLowerInvariant() switch
+    {
+      "rules" => SnippetMode.Rules,
+      "off" => SnippetMode.Off,
+      _ => throw new CliException($"--grouping takes rules or off, not '{value}'"),
+    };
   }
 }

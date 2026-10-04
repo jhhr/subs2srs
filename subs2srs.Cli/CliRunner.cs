@@ -103,44 +103,183 @@ namespace subs2srs.Cli
       }
     }
 
-    private static Task<int> GoAsync(CliOptions options, TextWriter stdout, TextWriter stderr, CancellationToken token)
+    /// <summary>
+    /// <c>go</c>: load the project, resolve the episodes and set up the run; then with
+    /// <c>--dry-run</c> print the list and the checks, otherwise check, run the pipeline once
+    /// over every ready episode and print the table.
+    /// </summary>
+    private static async Task<int> GoAsync(CliOptions options, TextWriter stdout, TextWriter stderr, CancellationToken token)
     {
-      if (!options.DryRun)
-        throw new CliException("go without --dry-run is not built yet; --dry-run prints the episode list.");
-
       LoadProject(options.ProjectPath);
+      Settings s = Settings.Instance;
+      if (options.Grouping is SnippetMode grouping)
+        s.Snippets.Mode = grouping;
+      else if (s.Snippets.Mode == SnippetMode.AI && !options.DryRun)
+        // So the mode is never AI when the pipeline starts, and its own AI step
+        // (WorkerSubs.aiGroupingOnGoApplies) never runs from here.
+        throw new CliException("the project groups snippets by AI, and go cannot ask the model yet (its AI pre-pass "
+          + "is not built yet). Run with --grouping rules or --grouping off to group them without the model.");
       token.ThrowIfCancellationRequested();
       EpisodeList list = options.SeasonDir != null
-        ? EpisodeList.FromSeason(options.SeasonDir, Settings.Instance)
-        : EpisodeList.FromPatterns(Settings.Instance);
+        ? EpisodeList.FromSeason(options.SeasonDir, s)
+        : EpisodeList.FromPatterns(s);
+      List<Episode> ready = list.Episodes.Where(e => !e.Skipped).ToList();
+      // Pattern mode: ProjectFiles.Resolve has set up the files, numbered from the start number.
+      if (list.SeasonDir != null) SetUpSeasonRun(s, list, ready);
 
-      PrintEpisodes(list, stdout);
-      List<GoProblem> problems = RunChecks(list);
-      PrintChecks(problems, options.Yes, stderr);
+      if (options.DryRun)
+      {
+        PrintEpisodes(list, stdout);
+        List<GoProblem> found = RunChecks(s);
+        PrintChecks(found, options.Yes, stderr);
+        stderr.WriteLine(Summary(list) + " Dry run: nothing was made.");
+        // A warning leaves the exit code alone: whether go would stop at it is up to --yes.
+        if (found.Exists(p => p.IsError)) return CliOptions.ExitError;
+        return list.SkippedCount > 0 ? CliOptions.ExitSkipped : CliOptions.ExitOk;
+      }
+
+      stderr.WriteLine(Summary(list));
+      if (ready.Count == 0)
+      {
+        PrintTable(list, null, CliOptions.ExitSkipped, stdout);
+        return CliOptions.ExitSkipped;
+      }
+      List<GoProblem> problems = RunChecks(s);
+      if (problems.Exists(p => p.IsError))
+      {
+        PrintChecks(problems, options.Yes, stderr);
+        throw new CliException("nothing was made: the checks before starting found the errors above.");
+      }
+      // UtilsMsg puts each warning on stderr as a question, which --yes answers.
+      foreach (GoProblem warning in problems)
+        if (!UtilsMsg.showConfirm(warning.Message))
+          throw new CliException("nothing was made: the answer to the warning above was no; with --yes go answers yes and goes on.");
+      token.ThrowIfCancellationRequested();
+
+      var progress = new ConsoleProgress(stderr, token);
+      // The pipeline reports its end through UtilsMsg too (on stderr): the time taken, or the
+      // error with its stack trace, or "Action cancelled.".
+      PipelineResult result = await new SubsProcessor().StartAsync(progress);
+      progress.Done();
+
+      if (result.Status == PipelineStatus.Failed)
+        stderr.WriteLine("subs2srs-cli: " + result.Message);
+      if (result.Status != PipelineStatus.Completed && result.ImportFile != null && File.Exists(result.ImportFile))
+        DeleteUnfinishedImportFile(result.ImportFile, stderr);
+      int code = result.Status switch
+      {
+        PipelineStatus.Completed => list.SkippedCount > 0 ? CliOptions.ExitSkipped : CliOptions.ExitOk,
+        PipelineStatus.Cancelled => CliOptions.ExitCancelled,
+        _ => CliOptions.ExitError,
+      };
+      PrintTable(list, result, code, stdout);
+      return code;
+    }
+
+    /// <summary>
+    /// The settings of a season run, set after <see cref="ProjectIO.Load"/>, which clears them:
+    /// the ready episodes' files in order, their numbers, and the name padding of the whole season.
+    /// </summary>
+    private static void SetUpSeasonRun(Settings s, EpisodeList list, List<Episode> ready)
+    {
+      s.Subs[0].Files = ready.Select(e => e.Subs1!).ToArray();
+      s.Subs[1].Files = ready.Select(e => e.Subs2!).ToArray();
+      // The pipeline reads the patterns only for whether there is a Subs2 and whether the
+      // subtitles are VobSub (an .idx among the files they match). The first episode's own
+      // file answers both: a name, not a wildcard (a season's .ja and .en files are text).
+      s.Subs[0].FilePattern = ready.Count > 0 ? ready[0].Subs1! : "";
+      s.Subs[1].FilePattern = ready.Count > 0 ? ready[0].Subs2! : "";
+      s.VideoClips.FilePattern = Path.Combine(list.SeasonDir!, "*.mkv"); // only logged
+      s.VideoClips.Files = ready.Select(e => e.Video!).ToArray();
+      // Audio comes from the videos (FromSeason refuses audio files), but the audio worker
+      // reads this list whenever it is not empty, and a project may keep an old pattern.
+      s.AudioClips.FilePattern = "";
+      s.AudioClips.Files = Array.Empty<string>();
+      s.EpisodeNumbers = ready.Select(e => e.Number).ToArray();
+      // Names padded as a run over every episode pads them, so that a skipped episode does not
+      // rename the cards and media of the others from one run to the next.
+      s.EpisodeCountForNames = list.Episodes.Count;
+      ConstantSettings.UpdateAudioFilenameFormats();
+    }
+
+    /// <summary>
+    /// The checks the GUI's Go makes too (<see cref="GoChecks"/>), over the episodes that would
+    /// run. A project that groups snippets by AI needs the model (and <c>claude</c>) whatever
+    /// the AI Grouping On Go preference says; only a dry run gets here with that mode, as yet.
+    /// </summary>
+    private static List<GoProblem> RunChecks(Settings s)
+      => GoChecks.Run(s, GoChecks.AudioStreamIndex(s), s.Snippets.Mode == SnippetMode.AI);
+
+    private static string Summary(EpisodeList list)
+    {
       int skipped = list.SkippedCount;
       string from = list.SeasonDir != null ? "in " + list.SeasonDir : "from the project's patterns";
       string leftOut = list.LeftOut > 0
         ? $"; {list.LeftOut} more after Episode End # {Settings.Instance.EpisodeEndNumber} left out"
         : "";
-      stderr.WriteLine(FormattableString.Invariant(
-        $"{list.Episodes.Count} episode(s) {from}: {list.Episodes.Count - skipped} ready, {skipped} skipped{leftOut}. Dry run: nothing was made."));
-      // A warning leaves the exit code alone: whether go would stop at it is up to --yes.
-      if (problems.Exists(p => p.IsError)) return Task.FromResult(CliOptions.ExitError);
-      return Task.FromResult(skipped > 0 ? CliOptions.ExitSkipped : CliOptions.ExitOk);
+      return FormattableString.Invariant(
+        $"{list.Episodes.Count} episode(s) {from}: {list.Episodes.Count - skipped} ready, {skipped} skipped{leftOut}.");
     }
 
     /// <summary>
-    /// The checks the GUI's Go makes too (<see cref="GoChecks"/>), over the episodes that would
-    /// run. The command line asks the model whenever the project groups snippets by AI,
-    /// whatever the AI Grouping On Go preference says.
+    /// A run that failed or was cancelled after "Generate import file" leaves a TSV whose cards
+    /// lack some of their media: it is deleted, so that it cannot be imported by mistake. The
+    /// media made so far stay. A TSV of an earlier run is not touched when the run stopped
+    /// before that step.
     /// </summary>
-    private static List<GoProblem> RunChecks(EpisodeList list)
+    private static void DeleteUnfinishedImportFile(string path, TextWriter stderr)
     {
-      Settings s = Settings.Instance;
-      // Pattern mode resolved the project's own files; in season mode the run's videos are the ready episodes'.
-      if (list.SeasonDir != null)
-        s.VideoClips.Files = list.Episodes.Where(e => !e.Skipped && e.Video != null).Select(e => e.Video!).ToArray();
-      return GoChecks.Run(s, GoChecks.AudioStreamIndex(s), s.Snippets.Mode == SnippetMode.AI);
+      try
+      {
+        File.Delete(path);
+        stderr.WriteLine($"subs2srs-cli: deleted {path}: the run stopped after writing it, before the media of its cards were made.");
+      }
+      catch (Exception ex) when (ex is IOException || ex is UnauthorizedAccessException)
+      {
+        stderr.WriteLine($"subs2srs-cli: {path} was written before the run stopped and its cards lack media; do not import it. "
+          + $"It could not be deleted: {ex.Message}");
+      }
+    }
+
+    /// <summary>
+    /// The table after a run, on stdout: one row per episode of the list with its number, video
+    /// name, "done", "skipped: " and why, "failed" or "cancelled", and its cards; then the
+    /// TSV's path, how many episodes it holds, and the exit code. <paramref name="result"/> is
+    /// null when no episode was ready and nothing ran.
+    /// </summary>
+    internal static void PrintTable(EpisodeList list, PipelineResult? result, int exitCode, TextWriter stdout)
+    {
+      var table = new TextTable("#", "Episode", "Status", "Cards");
+      int index = 0; // into the run's Files arrays, and so into CardsPerEpisode: the ready episodes in order
+      foreach (Episode e in list.Episodes)
+      {
+        string number = e.Number.ToString(CultureInfo.InvariantCulture);
+        string name = Path.GetFileNameWithoutExtension(e.Video ?? e.Subs1 ?? "");
+        if (e.Skipped)
+        {
+          table.Add(number, name, "skipped: " + e.SkipReason, "-");
+          continue;
+        }
+        int i = index++;
+        PipelineStatus ran = result!.Status; // an episode was ready, so the run started
+        string status = ran switch
+        {
+          PipelineStatus.Completed => "done",
+          PipelineStatus.Cancelled => "cancelled",
+          _ => "failed",
+        };
+        string cards = ran == PipelineStatus.Completed && i < result.CardsPerEpisode.Count
+          ? result.CardsPerEpisode[i].ToString(CultureInfo.InvariantCulture)
+          : "-";
+        table.Add(number, name, status, cards);
+      }
+      foreach (string line in table.Lines())
+        stdout.WriteLine(line);
+
+      bool written = result?.Status == PipelineStatus.Completed && result.ImportFile != null;
+      int done = written ? list.Episodes.Count(e => !e.Skipped) : 0;
+      stdout.WriteLine(FormattableString.Invariant(
+        $"{(list.SeasonDir != null ? "season TSV" : "TSV")}: {(written ? result!.ImportFile : "not written")} ({done} of {list.Episodes.Count} episodes); exit {exitCode}"));
     }
 
     /// <summary>
