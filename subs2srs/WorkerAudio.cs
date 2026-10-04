@@ -32,6 +32,19 @@ namespace subs2srs
   public class WorkerAudio
   {
     /// <summary>
+    /// Why <see cref="genAudioClip"/> returned false when it failed rather than being
+    /// cancelled: the message it also showed through <see cref="UtilsMsg"/>. Null otherwise.
+    /// </summary>
+    public string? Error { get; private set; }
+
+    private bool fail(string msg)
+    {
+      Error = msg;
+      UtilsMsg.showErrMsg(msg);
+      return false;
+    }
+
+    /// <summary>
     /// Generate Audio clips for all episodes.
     /// </summary>
     public bool genAudioClip(WorkerVars workerVars, IProgressReporter dialogProgress)
@@ -42,7 +55,7 @@ namespace subs2srs
       int totalLines = UtilsSubs.getTotalLineCount(workerVars.CombinedAll);
       TimeSpan lastTime = UtilsSubs.getLastTime(workerVars.CombinedAll);
 
-      UtilsName name = new UtilsName(Settings.Instance.DeckName, totalEpisodes,
+      UtilsName name = new UtilsName(Settings.Instance.DeckName, Settings.Instance.EpisodeCountForPadding(totalEpisodes),
         totalLines, lastTime, Settings.Instance.VideoClips.Size.Width, Settings.Instance.VideoClips.Size.Height);
 
       var parallelOptions = new ParallelOptions
@@ -117,9 +130,8 @@ namespace subs2srs
             if (dialogProgress.Cancel)
               return false;
 
-            UtilsMsg.showErrMsg("Failed to extract the audio from the video.\n" +
-                                "Make sure that the video does not have any DRM restrictions.");
-            return false;
+            return fail("Failed to extract the audio from the video.\n" +
+                        "Make sure that the video does not have any DRM restrictions.");
           }
 
           useDemuxEncode = true;
@@ -141,9 +153,8 @@ namespace subs2srs
             if (dialogProgress.Cancel)
               return false;
 
-            UtilsMsg.showErrMsg("Failed to demux the audio file.\n" +
-                                "Make sure that the audio file does not have any DRM restrictions.");
-            return false;
+            return fail("Failed to demux the audio file.\n" +
+                        "Make sure that the audio file does not have any DRM restrictions.");
           }
 
           useDemuxEncode = true;
@@ -175,9 +186,8 @@ namespace subs2srs
             if (dialogProgress.Cancel)
               return false;
 
-            UtilsMsg.showErrMsg("Failed to decode the audio.\n" +
-                                "Make sure the source file is not corrupted.");
-            return false;
+            return fail("Failed to decode the audio.\n" +
+                        "Make sure the source file is not corrupted.");
           }
         }
 

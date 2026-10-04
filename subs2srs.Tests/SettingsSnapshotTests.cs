@@ -187,6 +187,31 @@ namespace subs2srs.Tests
             Assert.Null(Settings.Instance.EpisodeNumbers);
         }
 
+        [Fact]
+        public void EpisodeCountForPadding_IsTheRunsCount_UnlessACountForNamesIsSet()
+        {
+            Assert.Null(Settings.Instance.EpisodeCountForNames);
+            Assert.Equal(2, Settings.Instance.EpisodeCountForPadding(2));
+
+            Settings.Instance.EpisodeCountForNames = 10;
+            Assert.Equal(10, Settings.Instance.EpisodeCountForPadding(2));
+        }
+
+        [Fact]
+        public void EpisodeCountForNames_ClearedByResetAndRestoreFrom()
+        {
+            Settings.Instance.EpisodeCountForNames = 10;
+            var snapshot = Settings.Instance.Snapshot();
+            Assert.Null(snapshot.EpisodeCountForNames); // not serialized, like EpisodeNumbers
+
+            Settings.Instance.RestoreFrom(snapshot);
+            Assert.Null(Settings.Instance.EpisodeCountForNames);
+
+            Settings.Instance.EpisodeCountForNames = 10;
+            Settings.Instance.reset();
+            Assert.Null(Settings.Instance.EpisodeCountForNames);
+        }
+
         // ── Snapshot round-trip through SubSettings ─────────────────────────
 
         [Fact]

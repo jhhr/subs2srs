@@ -21,6 +21,7 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 using System.Threading.Tasks;
 
 namespace subs2srs
@@ -29,22 +30,38 @@ namespace subs2srs
     {
         private DateTime workerStartTime;
         private int currentStep = 0;
+        private string currentStepName = "";
+        private int[] cardsPerEpisode = Array.Empty<int>();
+
+        /// <summary>
+        /// A step returned null or false. The workers do that when the user cancelled, and the
+        /// audio worker also when it failed (after showing why, which it passes here).
+        /// </summary>
+        private sealed class StepStoppedException : Exception
+        {
+            public StepStoppedException(string? error = null)
+                : base(error ?? "it stopped without an error message") { }
+        }
 
         /// <summary>
         /// Run the whole pipeline. When the preview already parsed and filtered the
         /// lines, pass its <paramref name="combinedAll"/> (and the join vectors it
         /// edited, <paramref name="joins"/>) so the user's edits are what gets generated.
+        /// Returns how the run ended. The dialogs it shows through <see cref="UtilsMsg"/>
+        /// are the GUI's as before: there a step that stopped reads "Action cancelled."
+        /// whether the user cancelled or it failed; the result tells the two apart.
         /// </summary>
-        public async Task StartAsync(IProgressReporter dialogProgress,
+        public async Task<PipelineResult> StartAsync(IProgressReporter dialogProgress,
             List<List<InfoCombined>> combinedAll = null, List<bool[]> joins = null)
         {
             UtilsCommon.RegisterEncodings();
 
             try { createOutputDirStructure(); }
-            catch
+            catch (Exception ex)
             {
                 UtilsMsg.showErrMsg("Cannot write to output directory.");
-                return;
+                return new PipelineResult(PipelineStatus.Failed,
+                    oneLine("Cannot write to output directory. " + ex.Message));
             }
         
             Logger.Instance.info("SubsProcessor.start");
@@ -55,6 +72,8 @@ namespace subs2srs
                 WorkerVars.SubsProcessingType.Normal);
             workerVars.Joins = joins;
             this.currentStep = 0;
+            this.currentStepName = "";
+            this.cardsPerEpisode = Array.Empty<int>();
             dialogProgress.StepsTotal = determineNumSteps(workerVars);
             this.workerStartTime = DateTime.Now;
         
@@ -64,19 +83,54 @@ namespace subs2srs
             
                 TimeSpan workerTotalTime = DateTime.Now - this.workerStartTime;
                 string srsFormat = getSrsFormatList();
-                string endMessage = String.Format(
-                    "Processing completed in {0:0.00} minutes.\n\n{1}",
-                    workerTotalTime.TotalMinutes, srsFormat);
-                UtilsMsg.showInfoMsg(endMessage);
-            }
-            catch (OperationCanceledException)
-            {
-                UtilsMsg.showErrMsg("Action cancelled.");
+                string doneMessage = String.Format(
+                    "Processing completed in {0:0.00} minutes.",
+                    workerTotalTime.TotalMinutes);
+                UtilsMsg.showInfoMsg(doneMessage + "\n\n" + srsFormat);
+                return new PipelineResult(PipelineStatus.Completed, doneMessage, this.cardsPerEpisode);
             }
             catch (Exception ex)
             {
-                UtilsMsg.showErrMsg($"Error: {ex.Message}\n\n{ex.StackTrace}");
+                if (ex is OperationCanceledException || ex is StepStoppedException)
+                    UtilsMsg.showErrMsg("Action cancelled.");
+                else
+                    UtilsMsg.showErrMsg($"Error: {ex.Message}\n\n{ex.StackTrace}");
+
+                // Only the reporter knows whether the user cancelled: a worker stops the same
+                // way when it failed, and a cancelled ffmpeg can make a step throw.
+                if (dialogProgress.Cancel || dialogProgress.Token.IsCancellationRequested)
+                    return new PipelineResult(PipelineStatus.Cancelled, "Action cancelled.", this.cardsPerEpisode);
+
+                return new PipelineResult(PipelineStatus.Failed,
+                    oneLine($"{this.currentStepName} failed: {failureDetail(ex)}"), this.cardsPerEpisode);
             }
+        }
+
+        /// <summary>
+        /// What stopped a step: the exception's message, or the first error of a step
+        /// that works in parallel.
+        /// </summary>
+        private static string failureDetail(Exception ex)
+        {
+            if (ex is AggregateException aggregate)
+            {
+                var inner = aggregate.Flatten().InnerExceptions;
+                if (inner.Count > 0) return inner[0].Message;
+            }
+
+            return ex.Message;
+        }
+
+        private static string oneLine(string message)
+        {
+            return String.Join(" ", message.Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries));
+        }
+
+        /// <summary>Show the next step's label and remember it for a failure message.</summary>
+        private void nextStep(IProgressReporter dialogProgress, string description)
+        {
+            this.currentStepName = description;
+            dialogProgress.NextStep(++currentStep, description);
         }
 
         private void DoWork(WorkerVars workerVars, IProgressReporter dialogProgress)
@@ -89,11 +143,11 @@ namespace subs2srs
 
             if (needToGenerateCombinedAll)
             {
-                dialogProgress.NextStep(++currentStep, "Combine subs");
+                nextStep(dialogProgress, "Combine subs");
                 combinedAll = subsWorker.combineAllSubs(workerVars, dialogProgress);
 
                 if (combinedAll != null) workerVars.CombinedAll = combinedAll;
-                else throw new OperationCanceledException();
+                else throw new StepStoppedException();
 
                 foreach (List<InfoCombined> combArray in workerVars.CombinedAll)
                     totalLines += combArray.Count;
@@ -101,44 +155,49 @@ namespace subs2srs
                 if (totalLines == 0)
                     throw new Exception("No lines of dialog could be parsed from the subtitle files.\nPlease check that they are valid.");
 
-                dialogProgress.NextStep(++currentStep, "Inactivate lines");
+                nextStep(dialogProgress, "Inactivate lines");
                 combinedAll = subsWorker.inactivateLines(workerVars, dialogProgress);
 
                 if (combinedAll != null) workerVars.CombinedAll = combinedAll;
-                else throw new OperationCanceledException();
+                else throw new StepStoppedException();
             }
 
             if (WorkerSubs.aiGroupingOnGoApplies(workerVars))
             {
-                dialogProgress.NextStep(++currentStep, "AI grouping");
+                nextStep(dialogProgress, "AI grouping");
                 combinedAll = subsWorker.runAiGrouping(workerVars, dialogProgress);
 
                 if (combinedAll != null) workerVars.CombinedAll = combinedAll;
-                else throw new OperationCanceledException();
+                else throw new StepStoppedException();
             }
 
             // Runs whether the lines came from the preview (reusing its join vectors)
             // or were just generated (deriving them from the settings).
-            dialogProgress.NextStep(++currentStep, "Group into snippets");
+            nextStep(dialogProgress, "Group into snippets");
             combinedAll = subsWorker.groupIntoSnippets(workerVars, dialogProgress);
 
             if (combinedAll != null) workerVars.CombinedAll = combinedAll;
-            else throw new OperationCanceledException();
+            else throw new StepStoppedException();
 
             if ((Settings.Instance.ContextLeadingCount > 0) || (Settings.Instance.ContextTrailingCount > 0))
             {
-                dialogProgress.NextStep(++currentStep, "Find context lines");
+                nextStep(dialogProgress, "Find context lines");
                 combinedAll = subsWorker.markLinesOnlyNeededForContext(workerVars, dialogProgress);
 
                 if (combinedAll != null) workerVars.CombinedAll = combinedAll;
-                else throw new OperationCanceledException();
+                else throw new StepStoppedException();
             }
 
-            dialogProgress.NextStep(++currentStep, "Remove inactive lines");
+            nextStep(dialogProgress, "Remove inactive lines");
             combinedAll = subsWorker.removeInactiveLines(workerVars, dialogProgress, true);
 
             if (combinedAll != null) workerVars.CombinedAll = combinedAll;
-            else throw new OperationCanceledException();
+            else throw new StepStoppedException();
+
+            // One TSV line per card; lines kept only as a neighbour's context get none.
+            this.cardsPerEpisode = workerVars.CombinedAll
+                .Select(episode => episode.Count(comb => !comb.OnlyNeededForContext))
+                .ToArray();
 
             totalLines = 0;
             foreach (List<InfoCombined> combArray in workerVars.CombinedAll)
@@ -152,23 +211,24 @@ namespace subs2srs
                 if (!needToGenerateCombinedAll)
                 {
                     if (!subsWorker.copyVobsubsFromPreviewDirToMediaDir(workerVars, dialogProgress))
-                        throw new OperationCanceledException();
+                        throw new StepStoppedException();
                 }
             }
             catch (OperationCanceledException) { throw; }
+            catch (StepStoppedException) { throw; }
             catch (Exception ex) { Logger.Instance.info($"VobSub copy failed: {ex.Message}"); }
 
-            dialogProgress.NextStep(++currentStep, "Generate import file");
+            nextStep(dialogProgress, "Generate import file");
             WorkerSrs srsWorker = new WorkerSrs();
 
             if (!srsWorker.genSrs(workerVars, dialogProgress))
-                throw new OperationCanceledException();
+                throw new StepStoppedException();
 
             List<List<InfoCombined>> combinedAllWithContext = ObjectCopier.Clone<List<List<InfoCombined>>>(workerVars.CombinedAll);
 
             if (Settings.Instance.AudioClips.Enabled)
             {
-                dialogProgress.NextStep(++currentStep, "Generate audio clips");
+                nextStep(dialogProgress, "Generate audio clips");
 
                 if (((Settings.Instance.ContextLeadingCount > 0) && Settings.Instance.ContextLeadingIncludeAudioClips) || ((Settings.Instance.ContextTrailingCount > 0) && Settings.Instance.ContextTrailingIncludeAudioClips))
                     workerVars.CombinedAll = combinedAllWithContext;
@@ -176,12 +236,12 @@ namespace subs2srs
                     workerVars.CombinedAll = subsWorker.removeContextOnlyLines(combinedAllWithContext);
 
                 WorkerAudio audioWorker = new WorkerAudio();
-                if (!audioWorker.genAudioClip(workerVars, dialogProgress)) throw new OperationCanceledException();
+                if (!audioWorker.genAudioClip(workerVars, dialogProgress)) throw new StepStoppedException(audioWorker.Error);
             }
 
             if (Settings.Instance.Snapshots.Enabled)
             {
-                dialogProgress.NextStep(++currentStep, "Generate snapshots");
+                nextStep(dialogProgress, "Generate snapshots");
 
                 if (((Settings.Instance.ContextLeadingCount > 0) && Settings.Instance.ContextLeadingIncludeSnapshots) || ((Settings.Instance.ContextTrailingCount > 0) && Settings.Instance.ContextTrailingIncludeSnapshots))
                     workerVars.CombinedAll = combinedAllWithContext;
@@ -189,12 +249,12 @@ namespace subs2srs
                     workerVars.CombinedAll = subsWorker.removeContextOnlyLines(combinedAllWithContext);
 
                 WorkerSnapshot snapshotWorker = new WorkerSnapshot();
-                if (!snapshotWorker.genSnapshots(workerVars, dialogProgress)) throw new OperationCanceledException();
+                if (!snapshotWorker.genSnapshots(workerVars, dialogProgress)) throw new StepStoppedException();
             }
 
             if (Settings.Instance.AnimatedSnapshots.Enabled)
             {
-                dialogProgress.NextStep(++currentStep, "Generate animated snapshots");
+                nextStep(dialogProgress, "Generate animated snapshots");
 
                 // Same context rules as the still snapshots.
                 if (((Settings.Instance.ContextLeadingCount > 0) && Settings.Instance.ContextLeadingIncludeSnapshots) || ((Settings.Instance.ContextTrailingCount > 0) && Settings.Instance.ContextTrailingIncludeSnapshots))
@@ -203,12 +263,12 @@ namespace subs2srs
                     workerVars.CombinedAll = subsWorker.removeContextOnlyLines(combinedAllWithContext);
 
                 WorkerAnimatedSnapshot animatedWorker = new WorkerAnimatedSnapshot();
-                if (!animatedWorker.genAnimatedSnapshots(workerVars, dialogProgress)) throw new OperationCanceledException();
+                if (!animatedWorker.genAnimatedSnapshots(workerVars, dialogProgress)) throw new StepStoppedException();
             }
 
             if (Settings.Instance.VideoClips.Enabled)
             {
-                dialogProgress.NextStep(++currentStep, "Generate video clips");
+                nextStep(dialogProgress, "Generate video clips");
 
                 if (((Settings.Instance.ContextLeadingCount > 0) && Settings.Instance.ContextLeadingIncludeVideoClips) || ((Settings.Instance.ContextTrailingCount > 0) && Settings.Instance.ContextTrailingIncludeVideoClips))
                     workerVars.CombinedAll = combinedAllWithContext;
@@ -216,7 +276,7 @@ namespace subs2srs
                     workerVars.CombinedAll = subsWorker.removeContextOnlyLines(combinedAllWithContext);
 
                 WorkerVideo videoWorker = new WorkerVideo();
-                if (!videoWorker.genVideoClip(workerVars, dialogProgress)) throw new OperationCanceledException();
+                if (!videoWorker.genVideoClip(workerVars, dialogProgress)) throw new StepStoppedException();
             }
         }
 

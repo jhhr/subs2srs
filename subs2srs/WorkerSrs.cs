@@ -113,7 +113,7 @@ namespace subs2srs
 
       lastTime = UtilsSubs.getLastTime(workerVars.CombinedAll);
 
-      name = new UtilsName(Settings.Instance.DeckName, totalEpisodes,
+      name = new UtilsName(Settings.Instance.DeckName, Settings.Instance.EpisodeCountForPadding(totalEpisodes),
         totalLines, lastTime, Settings.Instance.VideoClips.Size.Width, Settings.Instance.VideoClips.Size.Height);
 
       string nameStr = name.createName(ConstantSettings.SrsFilenameFormat, 0,

@@ -284,6 +284,7 @@ namespace subs2srs
       var(new { Settings.Instance.EpisodeStartNumber });
       string episodeNumbers = Settings.Instance.EpisodeNumbers == null ? "" : string.Join(",", Settings.Instance.EpisodeNumbers);
       var(new { episodeNumbers });
+      var(new { Settings.Instance.EpisodeCountForNames });
       var(new { Settings.Instance.LanguageSpecific.KanjiLinesOnly });
 
       var(new { Settings.Instance.Snippets.Mode });

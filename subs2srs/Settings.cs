@@ -1315,6 +1315,22 @@ namespace subs2srs
       return EpisodeNumbers[index];
     }
 
+    /// <summary>
+    /// The episode count that <c>${0:episode_num}</c> is zero-padded to in names and tags, so
+    /// that they do not change with the number of episodes in a run (a season run that skips
+    /// some). Null (the default, and what the GUI uses) pads to the run's own count. Not
+    /// serialized, like <see cref="EpisodeNumbers"/>.
+    /// </summary>
+    [JsonIgnore]
+    public int? EpisodeCountForNames { get; set; }
+
+    /// <summary>
+    /// The episode count every <see cref="UtilsName"/> the pipeline builds pads episode numbers
+    /// to: <see cref="EpisodeCountForNames"/> when set, else <paramref name="runEpisodes"/>, the
+    /// number of episodes in the run.
+    /// </summary>
+    public int EpisodeCountForPadding(int runEpisodes) => EpisodeCountForNames ?? runEpisodes;
+
     [JsonPropertyName("actorList")]
     public List<string> ActorList { get; set; }
 
@@ -1380,7 +1396,8 @@ namespace subs2srs
 
     /// <summary>
     /// Overwrite all mutable properties from <paramref name="other"/>.
-    /// Transient arrays (Files) are reset to empty, <see cref="EpisodeNumbers"/> to null.
+    /// Transient arrays (Files) are reset to empty, <see cref="EpisodeNumbers"/> and
+    /// <see cref="EpisodeCountForNames"/> to null.
     /// </summary>
     public void RestoreFrom(Settings other)
     {
@@ -1409,6 +1426,7 @@ namespace subs2srs
       EpisodeStartNumber = other.EpisodeStartNumber;
       EpisodeEndNumber = other.EpisodeEndNumber;
       EpisodeNumbers = null;
+      EpisodeCountForNames = null;
 
       ActorList = other.ActorList;
 
@@ -1501,6 +1519,7 @@ namespace subs2srs
       EpisodeStartNumber = 1;
       EpisodeEndNumber = 0;
       EpisodeNumbers = null;
+      EpisodeCountForNames = null;
 
       ActorList = new List<string>();
 

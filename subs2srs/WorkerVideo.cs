@@ -42,7 +42,7 @@ namespace subs2srs
       int totalLines = UtilsSubs.getTotalLineCount(workerVars.CombinedAll);
       TimeSpan lastTime = UtilsSubs.getLastTime(workerVars.CombinedAll);
 
-      UtilsName name = new UtilsName(Settings.Instance.DeckName, totalEpisodes,
+      UtilsName name = new UtilsName(Settings.Instance.DeckName, Settings.Instance.EpisodeCountForPadding(totalEpisodes),
         totalLines, lastTime, Settings.Instance.VideoClips.Size.Width, Settings.Instance.VideoClips.Size.Height);
 
       var parallelOptions = new ParallelOptions

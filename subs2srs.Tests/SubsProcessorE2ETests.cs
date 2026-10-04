@@ -146,8 +146,9 @@ namespace subs2srs.Tests
             using var scope = new TestScope();
             ConfigureBasicRun(scope, TestMedia.SrtPath, "utf-8", "Opus");
 
-            await new SubsProcessor().StartAsync(new CancellingProgressReporter(0));
+            var result = await new SubsProcessor().StartAsync(new CancellingProgressReporter(0));
 
+            Assert.Equal(PipelineStatus.Cancelled, result.Status);
             Assert.Contains(scope.Msgs.Errors, e => e.Contains("cancelled", StringComparison.OrdinalIgnoreCase));
             Assert.Empty(scope.Msgs.Infos);
             Assert.False(File.Exists(TsvPath(scope.OutputDir)), "TSV must not be written on cancel");
@@ -185,15 +186,18 @@ namespace subs2srs.Tests
         }
 
         [RequiresFfmpegTheory]
-        [InlineData(new[] { 1, 3 }, 7, 1, 3)] // explicit numbers; the start number plays no part
-        [InlineData(null, 5, 5, 6)]           // none: counted from the start number, as before
+        [InlineData(new[] { 1, 3 }, 7, null, "1", "3")] // explicit numbers; the start number plays no part
+        [InlineData(null, 5, null, "5", "6")]           // none: counted from the start number, as before
+        [InlineData(new[] { 3, 4 }, 1, 10, "03", "04")] // padded to the count for names, not the run's 2
+        [InlineData(new[] { 3, 4 }, 1, null, "3", "4")] // no count for names: padded to the run's 2, as before
         public async Task EpisodeNumbers_InTagsSequenceMarkersAndEveryMediaName(
-            int[]? episodeNumbers, int startNumber, int first, int second)
+            int[]? episodeNumbers, int startNumber, int? countForNames, string first, string second)
         {
             await TestMedia.EnsureAsync();
             using var scope = new TestScope();
             ConfigureTwoEpisodes(scope, episodeNumbers, startNumber);
             var s = Settings.Instance;
+            s.EpisodeCountForNames = countForNames;
             s.VideoClips.Enabled = true;
             s.VideoClips.Size = new ImageSize(160, 120);
             s.VideoClips.AudioStream = new InfoStream("0:a:0", "0", "", "Default"); // MainWindow fills this in the app
@@ -219,7 +223,7 @@ namespace subs2srs.Tests
             var mediaRef = new Regex("\\[sound:([^\\]]+)\\]|<img src=\"([^\"]+)\">");
             for (int i = 0; i < lines.Length; i++)
             {
-                int episode = i < TestMedia.Lines.Length ? first : second;
+                string episode = i < TestMedia.Lines.Length ? first : second;
                 string[] cols = lines[i].Split('\t');
                 Assert.Equal($"{DeckName}_{episode}", cols[0]); // tag
                 Assert.StartsWith($"{episode}_", cols[1]);       // sequence marker
@@ -269,6 +273,120 @@ namespace subs2srs.Tests
                 Assert.EndsWith("." + start, marker);
                 Assert.Contains(TestMedia.Lines[line], lines[i]);
             }
+        }
+
+        // ── The run's result ─────────────────────────────────────────────────
+
+        [RequiresFfmpegFact]
+        public async Task CompletedRun_CountsTheCardsOfEachEpisode()
+        {
+            await TestMedia.EnsureAsync();
+            using var scope = new TestScope();
+            ConfigureBasicRun(scope, TestMedia.SrtPath, "utf-8", "Opus");
+            var s = Settings.Instance;
+            s.AudioClips.Enabled = false;
+            s.Snapshots.Enabled = false;
+            // Episode 2 has only the first two lines. "Line two, with a comma." is excluded in
+            // both; in episode 1 it stays in the list as line three's leading context, no card.
+            string shortSrt = Path.Combine(scope.TempDir, "short.srt");
+            File.WriteAllText(shortSrt, TestMedia.BuildSrt(TestMedia.Lines.Take(2).ToArray()), new UTF8Encoding(false));
+            s.Subs[0].Files = new[] { TestMedia.SrtPath, shortSrt };
+            s.VideoClips.Files = new[] { TestMedia.VideoPath, TestMedia.VideoPath };
+            s.EpisodeNumbers = new[] { 1, 2 };
+            s.Subs[0].ExcludedWords = new[] { "comma" };
+            s.ContextLeadingCount = 1;
+
+            var result = await new SubsProcessor().StartAsync(new NullProgressReporter());
+
+            Assert.Equal(PipelineStatus.Completed, result.Status);
+            Assert.StartsWith("Processing completed in ", result.Message);
+            Assert.Equal(new[] { 3, 1 }, result.CardsPerEpisode);
+
+            // One TSV line per card, under its episode's tag.
+            var tags = ReadTsvLines(TsvPath(scope.OutputDir)).Select(l => l.Split('\t')[0]).ToArray();
+            for (int index = 0; index < result.CardsPerEpisode.Count; index++)
+                Assert.Equal(result.CardsPerEpisode[index],
+                    tags.Count(t => t == $"{DeckName}_{s.EpisodeNumber(index)}"));
+            Assert.Equal(result.CardsPerEpisode.Sum(), tags.Length);
+        }
+
+        /// <summary>
+        /// An mp3 file that does not exist: the audio worker returns false without a message,
+        /// the way a cancel ends it, and the GUI still reads "Action cancelled.". A file that
+        /// is not a video: ffmpeg's error, thrown by the audio worker, or by the snapshot
+        /// worker's parallel loop.
+        /// </summary>
+        [RequiresFfmpegTheory]
+        [InlineData("missing mp3", "Generate audio clips failed: it stopped without an error message", "Action cancelled.")]
+        [InlineData("not a video", "Generate audio clips failed: ffmpeg exited with code ", "Error: ")]
+        [InlineData("not a video, no audio", "Generate snapshots failed: ", "Error: ")]
+        public async Task FailingWorker_GivesFailed_WithTheStepAndItsMessage(
+            string fault, string messageStart, string guiDialogStart)
+        {
+            await TestMedia.EnsureAsync();
+            using var scope = new TestScope();
+            ConfigureBasicRun(scope, TestMedia.SrtPath, "utf-8", "MP3");
+            var s = Settings.Instance;
+            string notAVideo = Path.Combine(scope.TempDir, "not a video.mkv");
+            File.WriteAllText(notAVideo, "This is not a video.");
+            switch (fault)
+            {
+                case "missing mp3": // cut straight from the mp3, no demux
+                    s.AudioClips.UseAudioFromVideo = false;
+                    s.AudioClips.Files = new[] { Path.Combine(scope.TempDir, "missing.mp3") };
+                    break;
+                case "not a video":
+                    s.VideoClips.Files = new[] { notAVideo };
+                    break;
+                case "not a video, no audio":
+                    s.VideoClips.Files = new[] { notAVideo };
+                    s.AudioClips.Enabled = false;
+                    break;
+            }
+
+            var result = await new SubsProcessor().StartAsync(new NullProgressReporter());
+
+            Assert.Equal(PipelineStatus.Failed, result.Status);
+            Assert.StartsWith(messageStart, result.Message);
+            Assert.DoesNotContain("\n", result.Message);
+            Assert.Equal(new[] { TestMedia.Lines.Length }, result.CardsPerEpisode); // the TSV came first
+            // The GUI's dialogs are the ones it always showed.
+            Assert.Contains(scope.Msgs.Errors, e => e.StartsWith(guiDialogStart));
+            Assert.Empty(scope.Msgs.Infos);
+        }
+
+        [RequiresFfmpegFact]
+        public async Task CancelWhileAWorkerRuns_GivesCancelled_NotFailed()
+        {
+            await TestMedia.EnsureAsync();
+            using var scope = new TestScope();
+            ConfigureBasicRun(scope, TestMedia.SrtPath, "utf-8", "Opus");
+            // Combine subs, Inactivate lines, Group into snippets, Remove inactive lines,
+            // Generate import file, then cancelled as the audio clips start: the audio worker
+            // stops the way it does when it fails.
+            var reporter = new CancellingProgressReporter(6);
+
+            var result = await new SubsProcessor().StartAsync(reporter);
+
+            Assert.Equal("Generate audio clips", reporter.LastDescription);
+            Assert.Equal(PipelineStatus.Cancelled, result.Status);
+            Assert.Equal("Action cancelled.", result.Message);
+        }
+
+        [Fact]
+        public async Task UnwritableOutputDir_GivesFailed()
+        {
+            using var scope = new TestScope();
+            string file = Path.Combine(scope.TempDir, "a file");
+            File.WriteAllText(file, "");
+            Settings.Instance.OutputDir = Path.Combine(file, "out"); // under a file: cannot be created
+            Settings.Instance.DeckName = DeckName;
+
+            var result = await new SubsProcessor().StartAsync(new NullProgressReporter());
+
+            Assert.Equal(PipelineStatus.Failed, result.Status);
+            Assert.StartsWith("Cannot write to output directory.", result.Message);
+            Assert.Equal(new[] { "Cannot write to output directory." }, scope.Msgs.Errors);
         }
     }
 }
