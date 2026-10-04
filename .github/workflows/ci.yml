@@ -2,6 +2,7 @@ name: CI
 
 on:
   push:
+    branches: [default]
     paths:
       - 'subs2srs/**'
       - 'subs2srs.Tests/**'
@@ -19,6 +20,7 @@ on:
       - 'dist/**'
       - 'Makefile'
       - '.github/workflows/ci.yml'
+  workflow_dispatch: 
 
 env:
   DOTNET_NOLOGO: 1
