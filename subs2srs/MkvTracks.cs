@@ -357,7 +357,11 @@ namespace subs2srs
     private static string? LastLine(string text)
       => text.Split('\n').Select(l => l.Trim()).LastOrDefault(l => l.Length > 0);
 
-    private static async Task<CliProcessResult> RunAsync(ProcessStartInfo psi, CancellationToken ct)
+    /// <summary>
+    /// Runs an MKVToolNix tool to its end. A cancel kills it and waits (a few seconds at most)
+    /// for it to exit, so a file it was writing is closed when the cancel reaches the caller.
+    /// </summary>
+    internal static async Task<CliProcessResult> RunAsync(ProcessStartInfo psi, CancellationToken ct)
     {
       using var process = new Process { StartInfo = psi };
       process.Start();
@@ -369,7 +373,13 @@ namespace subs2srs
       }
       catch (OperationCanceledException)
       {
-        try { process.Kill(entireProcessTree: true); } catch (InvalidOperationException) { } catch (Win32Exception) { }
+        try
+        {
+          process.Kill(entireProcessTree: true);
+          process.WaitForExit(5000);
+        }
+        catch (InvalidOperationException) { }
+        catch (Win32Exception) { }
         throw;
       }
       return new CliProcessResult

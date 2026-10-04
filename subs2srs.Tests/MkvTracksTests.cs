@@ -529,7 +529,7 @@ namespace subs2srs.Tests
     }
 
     /// <summary>mkvmerge with UTF-8 arguments for the track names, independent of the code under test.</summary>
-    private static void Mux(string output, params string[] inputs)
+    internal static void Mux(string output, params string[] inputs)
     {
       var psi = new ProcessStartInfo(ConstantSettings.ResolveTool(ConstantSettings.ExeMkvMerge)!)
       {
@@ -547,7 +547,7 @@ namespace subs2srs.Tests
       Assert.True(p.ExitCode == 0, "mkvmerge failed: " + stdout.Result + stderr.Result);
     }
 
-    private static string Srt(int n, string text)
+    internal static string Srt(int n, string text)
     {
       var sb = new StringBuilder();
       for (int i = 0; i < n; i++)
@@ -555,7 +555,7 @@ namespace subs2srs.Tests
       return sb.ToString();
     }
 
-    private static string Ass(int n, string text)
+    internal static string Ass(int n, string text)
     {
       var sb = new StringBuilder("[Script Info]\nScriptType: v4.00+\n\n[V4+ Styles]\n"
         + "Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, "
