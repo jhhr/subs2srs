@@ -484,6 +484,34 @@ namespace subs2srs.Tests
       Assert.Empty(Directory.GetFileSystemEntries(scope.OutputDir));
     }
 
+    /// <summary>
+    /// <c>--deck</c> replaces the project's deck name for the run: the TSV's and the media
+    /// folder's names and the tags; the output directory stays the project's. The project makes
+    /// the TSV only, so the empty videos are never read.
+    /// </summary>
+    [Fact]
+    public async Task Go_Deck_NamesTheTsvTheMediaFolderAndTheTags_InsteadOfTheProjects()
+    {
+      using var scope = new TestScope(" ä 日本");
+      FakeFfmpeg(scope);
+      string project = SaveRunProject(scope, s => { s.AudioClips.Enabled = false; s.Snapshots.Enabled = false; });
+      string season = MakeSeason(scope, "a.mkv", "b.mkv");
+      foreach (string name in new[] { "a", "b" })
+      {
+        File.Move(TestMedia.WriteDialogueSrt(season), Path.Combine(season, "s2s", name + ".ja.srt"));
+        File.Move(TestMedia.WriteDialogueTranslationSrt(season), Path.Combine(season, "s2s", name + ".en.srt"));
+      }
+
+      Result r = await Run("go", "--project", project, "--season", season, "--deck", "Other Deck", "--no-prefs");
+
+      Assert.True(r.Code == CliOptions.ExitOk, r.ToString());
+      string tsv = Path.Combine(scope.OutputDir, "Other_Deck.tsv"); // spaces become '_', as in the GUI's field
+      Assert.Equal($"season TSV: {tsv} (2 of 2 episodes); exit 0", r.Lines[3]);
+      Assert.Equal(new[] { "Other_Deck_1", "Other_Deck_1", "Other_Deck_1", "Other_Deck_2", "Other_Deck_2", "Other_Deck_2" }, Tags(tsv));
+      Assert.Equal(new[] { "Other_Deck.media", "Other_Deck.tsv" },
+        Directory.GetFileSystemEntries(scope.OutputDir).Select(f => Path.GetFileName(f)).OrderBy(n => n, StringComparer.Ordinal));
+    }
+
     /// <summary>A failed check stops go before the run: the errors on stderr, exit 1, nothing made.</summary>
     [Fact]
     public async Task Go_WithAFailedCheck_Exits1_AndMakesNothing()

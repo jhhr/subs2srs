@@ -34,6 +34,11 @@ namespace subs2srs.Cli
     public string? RetimePlan { get; set; }
     /// <summary>The run was cancelled before this episode was done.</summary>
     public bool Cancelled { get; set; }
+    /// <summary>
+    /// What go made of the episode (AI, Status, Cards); in a dry run, whether its AI grouping is
+    /// cached and whether go would take it. Null when go does not run.
+    /// </summary>
+    public GoCells? Cards { get; set; }
   }
 
   /// <summary>A column of the season table: its header and each episode's cell.</summary>
@@ -51,15 +56,23 @@ namespace subs2srs.Cli
     /// <summary>The retime's reason when the episode has no EN track; the EN track column says why.</summary>
     public const string NoEnTrack = "no EN track";
 
+    /// <summary>The encoding mkvextract writes text tracks in, so the one season reads the EN files (Subs2) in.</summary>
+    public const string EnEncoding = "utf-8";
+
+    /// <summary>A dry run's retime that would be kept, so go would take it as it is now.</summary>
+    private const string KeptPlan = "kept";
+
     public static async Task<int> RunAsync(CliOptions options, TextWriter stdout, TextWriter stderr, CancellationToken token)
     {
       CliRunner.LoadProject(options.ProjectPath);
       Settings s = Settings.Instance;
       string[] videos = EpisodeList.SeasonVideos(options.SeasonDir!);
       string dir = Path.GetFullPath(options.SeasonDir!);
-      bool extract = options.Only != SeasonStage.Retime;
-      bool retime = options.Only != SeasonStage.Extract;
+      bool extract = Runs(options, SeasonStage.Extract);
+      bool retime = Runs(options, SeasonStage.Retime);
+      bool go = Runs(options, SeasonStage.Go);
       if (extract) RequireMkvToolNix();
+      if (go) SetUpCards(s, options, stderr);
       token.ThrowIfCancellationRequested();
 
       // The episodes go --season makes cards of: videos after Episode End # are left out.
@@ -70,11 +83,11 @@ namespace subs2srs.Cli
 
       // Every video, the ones left out too: a name that is a longer video's JP file is that video's.
       FoundFile[]? jpFiles = retime ? RetimeStage.FindJpFiles(dir, videos) : null;
-      FoundFile[]? enFiles = extract ? null : RetimeStage.FindEnFiles(dir, videos);
+      FoundFile[]? enFiles = retime && !extract ? RetimeStage.FindEnFiles(dir, videos) : null;
       // Resolved once; a missing subsretimer fails only the episodes it would have to retime.
       RetimeOptions? retimeOptions = retime && !options.DryRun ? RetimeOptions.FromSettings(s, options.MinMatch, options.Force) : null;
 
-      for (int i = 0; i < episodes.Count; i++)
+      for (int i = 0; i < episodes.Count && (extract || retime); i++)
       {
         SeasonEpisode e = episodes[i];
         string at = FormattableString.Invariant($"[{i + 1}/{episodes.Count}] {e.Name}: ");
@@ -108,21 +121,143 @@ namespace subs2srs.Cli
         catch (OperationCanceledException)
         {
           foreach (SeasonEpisode left in episodes.Skip(i)) left.Cancelled = true;
+          // go did not start: no episode got its cards.
+          if (go) foreach (SeasonEpisode any in episodes) any.Cards = new GoCells("-", "cancelled", "-");
           PrintReport(episodes, options, CliOptions.ExitCancelled, stdout);
           throw;
         }
       }
 
-      int ready = episodes.Count(e => Ready(e, retime, options.DryRun));
-      int code = ready == episodes.Count ? CliOptions.ExitOk : CliOptions.ExitSkipped;
-      PrintReport(episodes, options, code, stdout);
+      if (!go)
+      {
+        int ready = episodes.Count(e => Ready(e, retime, options.DryRun));
+        int code = ready == episodes.Count ? CliOptions.ExitOk : CliOptions.ExitSkipped;
+        PrintReport(episodes, options, code, stdout);
+        if (options.DryRun) PrintDryRunEnd(episodes, null, options, stderr);
+        return code;
+      }
+
+      // go --season over the same episodes: after the retime, those with a retime go may use;
+      // with --only go, what s2s holds, as go --season finds it.
+      EpisodeList list = extract || retime
+        ? ForGo(dir, episodes, s.EpisodeStartNumber, videos.Length - count, options.DryRun)
+        : EpisodeList.FromSeason(dir, videos, s);
       if (options.DryRun)
       {
-        if (episodes.Any(e => e.RetimePlan == "to retime") && RetimeStage.ResolveExe() == null)
-          stderr.WriteLine("warning: " + RetimeStage.NotFoundMessage + "; the episodes to retime would fail.");
-        stderr.WriteLine("Dry run: nothing was extracted, retimed or deleted.");
+        CliRunner.GoPlan plan = CliRunner.PlanGo(list, stderr, token);
+        SetPlanCells(episodes, list, plan.Cached);
+        bool allReady = extract || retime ? episodes.All(e => Ready(e, retime, dryRun: true)) : list.SkippedCount == 0;
+        // A warning leaves the exit code alone, as in go's dry run.
+        int planCode = plan.Problems.Exists(p => p.IsError) ? CliOptions.ExitError
+          : allReady ? CliOptions.ExitOk : CliOptions.ExitSkipped;
+        PrintReport(episodes, options, planCode, stdout);
+        PrintDryRunEnd(episodes, plan.Problems, options, stderr);
+        return planCode;
       }
-      return code;
+
+      GoRun run;
+      try
+      {
+        run = await CliRunner.RunGoAsync(list, options.Yes, stderr, token);
+      }
+      catch (Exception ex) when (ex is OperationCanceledException || ex is CliException)
+      {
+        // Stopped before the pipeline (a failed check, no to a warning, a cancel): the table
+        // still shows what the other stages did; RunAsync prints why and exits.
+        bool cancelled = ex is OperationCanceledException;
+        run = new GoRun(list, null, null, cancelled ? CliOptions.ExitCancelled : ((CliException)ex).ExitCode)
+        {
+          Stopped = cancelled ? "cancelled" : "not made",
+        };
+        SetCells(episodes, run);
+        PrintReport(episodes, options, run.ExitCode, stdout, run);
+        throw;
+      }
+      SetCells(episodes, run);
+      PrintReport(episodes, options, run.ExitCode, stdout, run);
+      return run.ExitCode;
+    }
+
+    /// <summary>Whether the run has this stage: every stage, or the one <c>--only</c> names.</summary>
+    private static bool Runs(CliOptions options, SeasonStage stage) => options.Only == null || options.Only == stage;
+
+    /// <summary>
+    /// The settings go makes the cards with: the project's, with <c>--grouping</c> and
+    /// <c>--deck</c>, and the EN files (Subs2) read as UTF-8, which mkvextract writes whatever
+    /// the track held; a warning, once, when the project's Subs2 encoding is another. A project
+    /// with audio clips from audio files is refused before any work, as go --season refuses it.
+    /// </summary>
+    private static void SetUpCards(Settings s, CliOptions options, TextWriter stderr)
+    {
+      if (EpisodeList.NeedsAudioFiles(s))
+        throw new CliException("season takes the audio clips from each video, but the project takes them from audio files "
+          + "(Audio tab: use existing audio). Choose audio from the video in the GUI and save the project.");
+      CliRunner.ApplyCardOptions(s, options);
+      if (!string.Equals(s.Subs[1].Encoding, EnEncoding, StringComparison.OrdinalIgnoreCase))
+      {
+        stderr.WriteLine($"warning: the project reads Subs2 as {s.Subs[1].Encoding}; season reads the EN files as {EnEncoding}, "
+          + "the encoding mkvextract writes them in.");
+        s.Subs[1].Encoding = EnEncoding;
+      }
+    }
+
+    /// <summary>
+    /// The episodes go makes cards of after the retime stage, numbered as go --season numbers
+    /// them (episode <c>k</c> stays <c>k</c>): one with a retime go may use (in a dry run, one
+    /// that would be kept) has it as Subs1 and its EN file as Subs2; any other is skipped with
+    /// the retime's reason.
+    /// </summary>
+    private static EpisodeList ForGo(string dir, IReadOnlyList<SeasonEpisode> episodes, int startNumber, int leftOut, bool dryRun)
+    {
+      var list = new List<Episode>(episodes.Count);
+      for (int i = 0; i < episodes.Count; i++)
+      {
+        SeasonEpisode e = episodes[i];
+        string? subs1 = dryRun
+          ? (e.RetimePlan == KeptPlan ? RetimeStage.OutputPath(dir, e.Video, e.Jp!.Path!) : null)
+          : e.Retime is { Ready: true } r ? r.OutputPath : null;
+        list.Add(subs1 != null
+          ? new Episode(i + startNumber, e.Video, subs1, e.En!.Path)
+          : new Episode(i + startNumber, e.Video, null, null, skipReason: dryRun ? e.RetimePlan : RetimeReason(e)));
+      }
+      return EpisodeList.OfSeason(dir, list, leftOut);
+    }
+
+    /// <summary>Why go leaves an episode out after the retime stage: the retime's outcome, "retime failed: ..." for a failure.</summary>
+    private static string RetimeReason(SeasonEpisode e) => e.Retime is RetimeOutcome r
+      ? (r.Kind == RetimeKind.Failed ? "retime " : "") + r.Column
+      : "not retimed";
+
+    /// <summary>go's cells for each episode, from its run; the list holds the same episodes in the same order.</summary>
+    private static void SetCells(IReadOnlyList<SeasonEpisode> episodes, GoRun run)
+    {
+      List<GoCells> cells = run.Cells();
+      for (int i = 0; i < episodes.Count; i++)
+        episodes[i].Cards = cells[i];
+    }
+
+    /// <summary>A dry run's go cells: whether each ready episode's AI grouping is cached ("-" without AI grouping), ready or why not.</summary>
+    private static void SetPlanCells(IReadOnlyList<SeasonEpisode> episodes, EpisodeList list, string[]? cached)
+    {
+      int readyIndex = 0;
+      for (int i = 0; i < episodes.Count; i++)
+      {
+        Episode e = list.Episodes[i];
+        episodes[i].Cards = e.Skipped
+          ? new GoCells("-", "skipped: " + e.SkipReason, "-")
+          : new GoCells(cached?[readyIndex++] ?? "-", "ready", "-");
+      }
+    }
+
+    /// <summary>A dry run's lines on stderr, under the table: subsretimer missing, go's checks, and that nothing was done.</summary>
+    private static void PrintDryRunEnd(IReadOnlyList<SeasonEpisode> episodes, List<GoProblem>? problems, CliOptions options, TextWriter stderr)
+    {
+      if (episodes.Any(e => e.RetimePlan == "to retime") && RetimeStage.ResolveExe() == null)
+        stderr.WriteLine("warning: " + RetimeStage.NotFoundMessage + "; the episodes to retime would fail.");
+      if (problems != null) CliRunner.PrintChecks(problems, options.Yes, stderr);
+      stderr.WriteLine(problems != null
+        ? "Dry run: nothing was extracted, retimed, deleted or made."
+        : "Dry run: nothing was extracted, retimed or deleted.");
     }
 
     /// <summary>mkvmerge picks the tracks and mkvextract extracts them: both, before any work.</summary>
@@ -218,7 +353,7 @@ namespace subs2srs.Cli
       if (e.Jp!.Path == null) return e.Jp.Problem ?? RetimeStage.NoJpFileReason;
       if (e.En!.Path == null) return e.En.Problem ?? RetimeStage.NoEnFileReason;
       // An EN file still to extract is not there yet, so its retime is not kept either.
-      return RetimeStage.WouldKeep(dir, e.Video, e.Jp.Path, e.En.Path, force) ? "kept" : "to retime";
+      return RetimeStage.WouldKeep(dir, e.Video, e.Jp.Path, e.En.Path, force) ? KeptPlan : "to retime";
     }
 
     /// <summary>
@@ -232,30 +367,44 @@ namespace subs2srs.Cli
     // ── the table ───────────────────────────────────────────────────────
 
     /// <summary>
-    /// The table's columns for these options: Episode, EN track (unless <c>--only retime</c>),
-    /// then the last stage's result: Retime, or with <c>--only extract</c> the EN file. A dry
-    /// run shows the plan: EN file, JP file and Retime.
+    /// The table's columns for these options: Episode, EN track (unless the run does not
+    /// extract), the retime (or with <c>--only extract</c> the EN file), then go's AI, Status and
+    /// Cards. A dry run shows the plan: EN file, JP file and Retime, and whether each AI
+    /// grouping is cached (with <c>--only go</c>, AI and Status as go's dry run has them).
     /// </summary>
     internal static List<SeasonColumn> Columns(CliOptions options)
     {
-      bool extract = options.Only != SeasonStage.Retime;
-      bool retime = options.Only != SeasonStage.Extract;
+      bool extract = Runs(options, SeasonStage.Extract);
+      bool retime = Runs(options, SeasonStage.Retime);
+      bool go = Runs(options, SeasonStage.Go);
       var columns = new List<SeasonColumn> { new("Episode", e => e.Name) };
       if (extract)
         columns.Add(new("EN track", e => e.Pick == null ? Pending(e) : e.Pick.Track?.Label ?? e.Pick.Reason ?? ""));
       if (options.DryRun)
       {
-        columns.Add(new("EN file", e => e.EnPlan ?? Pending(e)));
+        if (extract || retime)
+          columns.Add(new("EN file", e => e.EnPlan ?? Pending(e)));
         if (retime)
         {
           columns.Add(new("JP file", e => e.Jp == null ? Pending(e) : e.Jp.Path != null ? Path.GetFileName(e.Jp.Path) : e.Jp.Problem ?? ""));
           columns.Add(new("Retime", e => e.RetimePlan ?? Pending(e)));
         }
+        if (go)
+          columns.Add(new("AI", e => e.Cards?.Ai ?? Pending(e)));
+        if (go && !extract && !retime)
+          columns.Add(new("Status", e => e.Cards?.Status ?? Pending(e)));
+        return columns;
       }
-      else if (retime)
+      if (retime)
         columns.Add(new("Retime", e => e.Retime?.Column ?? Pending(e)));
-      else
+      else if (extract)
         columns.Add(new("EN file", ExtractionCell));
+      if (go)
+      {
+        columns.Add(new("AI", e => e.Cards?.Ai ?? Pending(e)));
+        columns.Add(new("Status", e => e.Cards?.Status ?? Pending(e)));
+        columns.Add(new("Cards", e => e.Cards?.Cards ?? Pending(e)));
+      }
       return columns;
     }
 
@@ -272,19 +421,26 @@ namespace subs2srs.Cli
 
     /// <summary>
     /// On stdout: the table; a note when the picked EN track differs between episodes; after a
-    /// run, how many episodes are ready and the exit code, then the editor command of each pair
-    /// subsretimer did not save (design 9).
+    /// run, go's TSV line (<paramref name="run"/>, null when go did not start), or with
+    /// <c>--only extract|retime</c> how many episodes are ready, with the exit code; then the
+    /// editor command of each pair subsretimer did not save (design 9).
     /// </summary>
-    internal static void PrintReport(IReadOnlyList<SeasonEpisode> episodes, CliOptions options, int exitCode, TextWriter stdout)
+    internal static void PrintReport(IReadOnlyList<SeasonEpisode> episodes, CliOptions options, int exitCode, TextWriter stdout,
+      GoRun? run = null)
     {
       PrintTable(episodes, Columns(options), stdout);
       if (TrackNote(episodes, options.Track != null) is string note) stdout.WriteLine(note);
       if (options.DryRun) return;
 
-      bool retime = options.Only != SeasonStage.Extract;
-      int ready = episodes.Count(e => Ready(e, retime, dryRun: false));
-      stdout.WriteLine(FormattableString.Invariant(
-        $"{(retime ? "retimed JP files" : "EN files")}: {ready} of {episodes.Count} episodes; exit {exitCode}"));
+      if (Runs(options, SeasonStage.Go))
+        stdout.WriteLine(run?.TsvLine(exitCode) ?? CliRunner.TsvLine(season: true, null, 0, episodes.Count, exitCode));
+      else
+      {
+        bool retime = options.Only == SeasonStage.Retime;
+        int ready = episodes.Count(e => Ready(e, retime, dryRun: false));
+        stdout.WriteLine(FormattableString.Invariant(
+          $"{(retime ? "retimed JP files" : "EN files")}: {ready} of {episodes.Count} episodes; exit {exitCode}"));
+      }
       List<string> commands = episodes.Select(e => e.Retime?.EditorCommand).OfType<string>().ToList();
       if (commands.Count == 0) return;
       stdout.WriteLine("align by hand, then run again:");

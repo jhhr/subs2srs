@@ -73,12 +73,26 @@ namespace subs2srs.Cli
       if (settings.AudioClips.Enabled && !settings.AudioClips.UseAudioFromVideo)
         throw new CliException("--season takes the audio clips from each video, but the project takes them from audio files "
           + "(Audio tab: use existing audio). Choose audio from the video in the GUI and save the project, or run without --season.");
-      string dir = Path.GetFullPath(seasonDir);
-      string[] videos = SeasonVideos(seasonDir);
+      return FromSeason(Path.GetFullPath(seasonDir), SeasonVideos(seasonDir), settings);
+    }
+
+    /// <summary>
+    /// <see cref="FromSeason(string, Settings)"/> for a season folder (full path) whose videos
+    /// are listed already (<see cref="SeasonVideos"/>): its <see cref="SubsFolder"/> read once.
+    /// </summary>
+    public static EpisodeList FromSeason(string dir, IReadOnlyList<string> videos, Settings settings)
+    {
       string[] subsNames = UtilsCommon.getNonHiddenFilesInDir(Path.Combine(dir, SubsFolder))
         .Select(f => Path.GetFileName(f)).ToArray();
       return ForSeason(dir, videos, subsNames, settings.EpisodeStartNumber, settings.EpisodeEndNumber);
     }
+
+    /// <summary>
+    /// A season folder's episodes listed elsewhere (season's own, after its retime stage):
+    /// numbered and cut at Episode End # as <see cref="ForSeason"/> does; <paramref name="leftOut"/>
+    /// videos after the end number.
+    /// </summary>
+    internal static EpisodeList OfSeason(string dir, List<Episode> episodes, int leftOut) => new(episodes, dir, leftOut);
 
     /// <summary>
     /// Every video of a season folder (<c>*.mkv</c>), full paths, in episode order. Throws

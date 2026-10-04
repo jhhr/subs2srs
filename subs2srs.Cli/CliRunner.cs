@@ -115,38 +115,81 @@ namespace subs2srs.Cli
     {
       LoadProject(options.ProjectPath);
       Settings s = Settings.Instance;
-      if (options.Grouping is SnippetMode grouping)
-        s.Snippets.Mode = grouping;
-      bool ai = s.Snippets.Mode == SnippetMode.AI;
+      ApplyCardOptions(s, options);
       token.ThrowIfCancellationRequested();
       EpisodeList list = options.SeasonDir != null
         ? EpisodeList.FromSeason(options.SeasonDir, s)
         : EpisodeList.FromPatterns(s);
+
+      if (options.DryRun)
+      {
+        GoPlan plan = PlanGo(list, stderr, token);
+        PrintEpisodes(list, plan.Cached, stdout);
+        PrintChecks(plan.Problems, options.Yes, stderr);
+        stderr.WriteLine(Summary(list) + " Dry run: nothing was made.");
+        // A warning leaves the exit code alone: whether go would stop at it is up to --yes.
+        if (plan.Problems.Exists(p => p.IsError)) return CliOptions.ExitError;
+        return list.SkippedCount > 0 ? CliOptions.ExitSkipped : CliOptions.ExitOk;
+      }
+
+      GoRun run = await RunGoAsync(list, options.Yes, stderr, token);
+      PrintTable(run, stdout);
+      return run.ExitCode;
+    }
+
+    /// <summary>The options that change how the cards are made, over the loaded project's settings: <c>--grouping</c>, <c>--deck</c>.</summary>
+    internal static void ApplyCardOptions(Settings s, CliOptions options)
+    {
+      if (options.Grouping is SnippetMode grouping)
+        s.Snippets.Mode = grouping;
+      // Read wherever the deck name is used: the import file's and media folder's names, every
+      // media name and the tags. The output directory is the project's own setting.
+      if (options.Deck != null)
+        s.DeckName = options.Deck;
+    }
+
+    /// <summary>What a dry run of go finds: each ready episode's AI cache state (null without AI grouping), and the checks' problems.</summary>
+    internal sealed record GoPlan(string[]? Cached, List<GoProblem> Problems);
+
+    /// <summary>
+    /// go's dry run over <paramref name="list"/>, without printing: the run set up as a real
+    /// one sets it up, whether each ready episode's AI grouping is cached (when snippets are
+    /// grouped by AI), and the checks before starting.
+    /// </summary>
+    internal static GoPlan PlanGo(EpisodeList list, TextWriter stderr, CancellationToken token)
+    {
+      Settings s = Settings.Instance;
+      List<Episode> ready = list.Episodes.Where(e => !e.Skipped).ToList();
+      // Pattern mode: ProjectFiles.Resolve has set up the files, numbered from the start number.
+      if (list.SeasonDir != null) SetUpSeasonRun(s, list, ready);
+      bool ai = s.Snippets.Mode == SnippetMode.AI;
+      string[]? cached = ai && ready.Count > 0 ? CachedColumn(ready.Count, stderr, token) : null;
+      return new GoPlan(cached, RunChecks(s));
+    }
+
+    /// <summary>
+    /// go from its episode list on, without printing the table (go and season print their own):
+    /// set up the run, check, group by AI first when the project does (<see cref="AiPrePass"/>),
+    /// run the pipeline once over every episode still in, delete an unfinished TSV, and the exit
+    /// code. Errors before the run (a failed check, no to a warning, a first step that fails)
+    /// throw <see cref="CliException"/>; a cancel before the pipeline starts throws
+    /// <see cref="OperationCanceledException"/>.
+    /// </summary>
+    internal static async Task<GoRun> RunGoAsync(EpisodeList list, bool yes, TextWriter stderr, CancellationToken token)
+    {
+      Settings s = Settings.Instance;
+      bool ai = s.Snippets.Mode == SnippetMode.AI;
       List<Episode> ready = list.Episodes.Where(e => !e.Skipped).ToList();
       // Pattern mode: ProjectFiles.Resolve has set up the files, numbered from the start number.
       if (list.SeasonDir != null) SetUpSeasonRun(s, list, ready);
 
-      if (options.DryRun)
-      {
-        PrintEpisodes(list, ai && ready.Count > 0 ? CachedColumn(ready.Count, stderr, token) : null, stdout);
-        List<GoProblem> found = RunChecks(s);
-        PrintChecks(found, options.Yes, stderr);
-        stderr.WriteLine(Summary(list) + " Dry run: nothing was made.");
-        // A warning leaves the exit code alone: whether go would stop at it is up to --yes.
-        if (found.Exists(p => p.IsError)) return CliOptions.ExitError;
-        return list.SkippedCount > 0 ? CliOptions.ExitSkipped : CliOptions.ExitOk;
-      }
-
       stderr.WriteLine(Summary(list));
       if (ready.Count == 0)
-      {
-        PrintTable(list, null, null, CliOptions.ExitSkipped, stdout);
-        return CliOptions.ExitSkipped;
-      }
+        return new GoRun(list, null, null, CliOptions.ExitSkipped);
       List<GoProblem> problems = RunChecks(s);
       if (problems.Exists(p => p.IsError))
       {
-        PrintChecks(problems, options.Yes, stderr);
+        PrintChecks(problems, yes, stderr);
         throw new CliException("nothing was made: the checks before starting found the errors above.");
       }
       // UtilsMsg puts each warning on stderr as a question, which --yes answers.
@@ -169,10 +212,7 @@ namespace subs2srs.Cli
         }
         pre.Report(stderr);
         if (pre.SkippedCount == ready.Count)
-        {
-          PrintTable(list, pre, null, CliOptions.ExitSkipped, stdout);
-          return CliOptions.ExitSkipped;
-        }
+          return new GoRun(list, pre, null, CliOptions.ExitSkipped);
         pre.DropSkipped(s);
       }
       // The pipeline reports its end through UtilsMsg too (on stderr): the time taken, or the
@@ -194,8 +234,7 @@ namespace subs2srs.Cli
         PipelineStatus.Cancelled => CliOptions.ExitCancelled,
         _ => CliOptions.ExitError,
       };
-      PrintTable(list, pre, result, code, stdout);
-      return code;
+      return new GoRun(list, pre, result, code);
     }
 
     /// <summary>
@@ -285,53 +324,30 @@ namespace subs2srs.Cli
 
     /// <summary>
     /// The table after a run, on stdout: one row per episode of the list with its number, video
-    /// name, what the AI pre-pass made of it (<see cref="AiOutcome.Column"/>; "-" when snippets
-    /// are not grouped by AI), "done", "skipped: " and why, "failed" or "cancelled", and its
-    /// cards; then the TSV's path, how many episodes it holds, and the exit code.
-    /// <paramref name="pre"/> is null without the pre-pass, <paramref name="result"/> when
-    /// nothing ran: no episode was ready, or the pre-pass skipped them all.
+    /// name and <see cref="GoRun.Cells"/> (AI, Status, Cards); then <see cref="GoRun.TsvLine"/>.
     /// </summary>
-    internal static void PrintTable(EpisodeList list, AiPrePass? pre, PipelineResult? result, int exitCode, TextWriter stdout)
+    internal static void PrintTable(GoRun run, TextWriter stdout)
     {
       var table = new TextTable("#", "Episode", "AI", "Status", "Cards");
-      int readyIndex = 0; // into the pre-pass's outcomes: the ready episodes in order
-      int index = 0; // into the run's Files arrays, and so into CardsPerEpisode: the episodes that ran, in order
-      foreach (Episode e in list.Episodes)
+      List<GoCells> cells = run.Cells();
+      for (int k = 0; k < run.List.Episodes.Count; k++)
       {
-        string number = e.Number.ToString(CultureInfo.InvariantCulture);
+        Episode e = run.List.Episodes[k];
         string name = Path.GetFileNameWithoutExtension(e.Video ?? e.Subs1 ?? "");
-        if (e.Skipped)
-        {
-          table.Add(number, name, "-", "skipped: " + e.SkipReason, "-");
-          continue;
-        }
-        AiOutcome? ai = pre?.Outcomes[readyIndex++];
-        if (ai != null && ai.Skipped)
-        {
-          table.Add(number, name, ai.Column, "skipped: " + ai.SkipReason, "-");
-          continue;
-        }
-        int i = index++;
-        PipelineStatus ran = result!.Status; // an episode is in the run, so the run started
-        string status = ran switch
-        {
-          PipelineStatus.Completed => "done",
-          PipelineStatus.Cancelled => "cancelled",
-          _ => "failed",
-        };
-        string cards = ran == PipelineStatus.Completed && i < result.CardsPerEpisode.Count
-          ? result.CardsPerEpisode[i].ToString(CultureInfo.InvariantCulture)
-          : "-";
-        table.Add(number, name, ai?.Column ?? "-", status, cards);
+        table.Add(e.Number.ToString(CultureInfo.InvariantCulture), name, cells[k].Ai, cells[k].Status, cells[k].Cards);
       }
       foreach (string line in table.Lines())
         stdout.WriteLine(line);
-
-      bool written = result?.Status == PipelineStatus.Completed && result.ImportFile != null;
-      int done = written ? index : 0;
-      stdout.WriteLine(FormattableString.Invariant(
-        $"{(list.SeasonDir != null ? "season TSV" : "TSV")}: {(written ? result!.ImportFile : "not written")} ({done} of {list.Episodes.Count} episodes); exit {exitCode}"));
+      stdout.WriteLine(run.TsvLine(run.ExitCode));
     }
+
+    /// <summary>
+    /// The line under the table: the TSV's path (or "not written"), how many episodes it holds,
+    /// and the exit code. "season TSV" for a season folder, as <c>season</c> prints it too.
+    /// </summary>
+    internal static string TsvLine(bool season, string? written, int done, int episodes, int exitCode)
+      => FormattableString.Invariant(
+        $"{(season ? "season TSV" : "TSV")}: {written ?? "not written"} ({done} of {episodes} episodes); exit {exitCode}");
 
     /// <summary>
     /// The checks' findings on stderr, under the table: "error: " or "warning: " and the message
@@ -402,6 +418,79 @@ namespace subs2srs.Cli
     {
       if (path == null) return "-";
       return list.SeasonDir != null ? Path.GetRelativePath(list.SeasonDir, path) : Path.GetFileName(path);
+    }
+  }
+
+  /// <summary>One episode's cells in a table after go: what the AI pre-pass made of it, its status and its cards.</summary>
+  internal sealed record GoCells(string Ai, string Status, string Cards);
+
+  /// <summary>
+  /// What one go made of its episodes (<see cref="CliRunner.RunGoAsync"/>), for a table: go's
+  /// own, or season's AI, Status and Cards columns. <see cref="Pre"/> is null without the
+  /// pre-pass, <see cref="Result"/> when the pipeline did not run: no episode was ready, the
+  /// pre-pass skipped them all, or (<see cref="Stopped"/>) the run stopped before it.
+  /// </summary>
+  internal sealed record GoRun(EpisodeList List, AiPrePass? Pre, PipelineResult? Result, int ExitCode)
+  {
+    /// <summary>
+    /// The status of the episodes that would have run when the run stopped before the
+    /// pipeline (a failed check, a cancel): season still prints its table then; go does not.
+    /// </summary>
+    public string? Stopped { get; init; }
+
+    /// <summary>
+    /// One per episode of the list: the pre-pass's outcome (<see cref="AiOutcome.Column"/>;
+    /// "-" when snippets are not grouped by AI), "done", "skipped: " and why, "failed" or
+    /// "cancelled", and the episode's cards.
+    /// </summary>
+    public List<GoCells> Cells() => Rows(out _);
+
+    /// <summary><see cref="CliRunner.TsvLine"/> for this run: the TSV is written only by a completed run.</summary>
+    public string TsvLine(int exitCode)
+    {
+      Rows(out int ran);
+      bool written = Result?.Status == PipelineStatus.Completed && Result.ImportFile != null;
+      return CliRunner.TsvLine(List.SeasonDir != null, written ? Result!.ImportFile : null, written ? ran : 0, List.Episodes.Count, exitCode);
+    }
+
+    private List<GoCells> Rows(out int ran)
+    {
+      var rows = new List<GoCells>(List.Episodes.Count);
+      int readyIndex = 0; // into the pre-pass's outcomes: the ready episodes in order
+      int index = 0; // into the run's Files arrays, and so into CardsPerEpisode: the episodes that ran, in order
+      foreach (Episode e in List.Episodes)
+      {
+        if (e.Skipped)
+        {
+          rows.Add(new GoCells("-", "skipped: " + e.SkipReason, "-"));
+          continue;
+        }
+        AiOutcome? ai = Pre?.Outcomes[readyIndex++];
+        if (ai != null && ai.Skipped)
+        {
+          rows.Add(new GoCells(ai.Column, "skipped: " + ai.SkipReason, "-"));
+          continue;
+        }
+        int i = index++;
+        if (Result == null)
+        {
+          // In go, an episode in the run means the run started; season's table after a stop.
+          rows.Add(new GoCells(ai?.Column ?? "-", Stopped ?? "-", "-"));
+          continue;
+        }
+        string status = Result.Status switch
+        {
+          PipelineStatus.Completed => "done",
+          PipelineStatus.Cancelled => "cancelled",
+          _ => "failed",
+        };
+        string cards = Result.Status == PipelineStatus.Completed && i < Result.CardsPerEpisode.Count
+          ? Result.CardsPerEpisode[i].ToString(CultureInfo.InvariantCulture)
+          : "-";
+        rows.Add(new GoCells(ai?.Column ?? "-", status, cards));
+      }
+      ran = index;
+      return rows;
     }
   }
 }

@@ -12,7 +12,7 @@ namespace subs2srs.Cli
   }
 
   /// <summary>The stage <c>season --only</c> runs on its own.</summary>
-  internal enum SeasonStage { Extract, Retime }
+  internal enum SeasonStage { Extract, Retime, Go }
 
 
   /// <summary>Command line of subs2srs-cli (see <see cref="Usage"/>).</summary>
@@ -44,6 +44,8 @@ namespace subs2srs.Cli
     public bool DryRun { get; set; }
     /// <summary><c>--grouping</c>: the snippet mode for this run instead of the project's; null = the project's.</summary>
     public SnippetMode? Grouping { get; set; }
+    /// <summary><c>--deck</c>: the deck name for this run instead of the project's; null = the project's.</summary>
+    public string? Deck { get; set; }
     public bool Yes { get; set; }
     public bool Verbose { get; set; }
     public bool NoPrefs { get; set; }
@@ -55,7 +57,7 @@ namespace subs2srs.Cli
 
 usage: subs2srs-cli go --project <file> [--season <dir>] [--dry-run] [options]
        subs2srs-cli season <dir> --project <file> [--track <id>] [--min-match <f>]
-                    [--force] [--only extract|retime] [--dry-run] [options]
+                    [--force] [--only extract|retime|go] [--dry-run] [options]
        subs2srs-cli --help | --version
 
 go makes the cards of a project saved from the GUI (.s2s.json), with its card fields,
@@ -75,6 +77,9 @@ encodings, audio, snapshots, deck name and output directory.
   --grouping <mode> group the lines into snippets by this mode instead of the
                     project's: rules or off, so a project that groups by AI runs
                     without the model.
+  --deck <name>     the deck name instead of the project's: it names the import file
+                    (<name>.tsv), the media folder (<name>.media) and the media, and
+                    starts each card's tag. The output directory stays the project's.
   --yes             answer yes when asked to confirm (the answer is no otherwise),
                     as at a warning of the checks
   --prefs <file>    read this preferences JSON file instead of the user's preferences.json
@@ -108,9 +113,10 @@ Exit codes: 0 every episode done (with --dry-run: resolved), 3 some episodes ski
 1 an error before any work (usage, project, folder, file counts, a failed check, no
 to a warning) or a step of the run failed, 130 cancelled.
 
-season prepares the subtitles of a season folder for go --season, one episode after
-another: every *.mkv in <dir>, in go's order, without those after the project's
-Episode End #.
+season makes the cards of a season folder in one command: every *.mkv in <dir>, in
+go's order, without those after the project's Episode End #. It prepares each
+episode's subtitles, one episode after another, then makes the cards as go --season
+does.
 
   1. The EN track: of the English ASS, SSA and SRT tracks that are not forced, the
      one with the most events (mkvmerge -J, from MKVToolNix). Image tracks (PGS,
@@ -124,8 +130,14 @@ Episode End #.
      the project's Subs1 encoding (the retimed file keeps it). A retime newer than
      both its files is kept, so a fix saved from subsretimer's editor survives later
      runs; any other is done again.
+  5. The cards of every episode with a retime (kept or new), as go --season makes
+     them from s2s, the AI grouping first when the project groups by AI. The other
+     episodes are skipped and keep their numbers. The EN files are read as UTF-8,
+     as mkvextract writes them, whatever the project's Subs2 encoding (a warning
+     says when it differs).
 
-  --project <file>  the project file (its Subs1 encoding, Episode Start # and End #)
+  --project <file>  the project file: Subs1 encoding, Episode Start # and End #,
+                    and everything go takes from it
   --track <id>      extract this track (an id mkvmerge -i shows) in every episode
                     instead of the pick
   --min-match <f>   passed to subsretimer: save a retime only when it covers at
@@ -135,22 +147,26 @@ Episode End #.
                     editor included. After changing --track this is needed: an
                     earlier extraction of another track in the same format has the
                     same name and would be kept.
-  --only <stage>    run one stage: extract, or retime (the EN files already in s2s;
-                    MKVToolNix is not needed)
-  --dry-run         extract, retime and delete nothing: print the EN track each
-                    episode would use, its JP file, and whether its EN file and its
-                    retime are there and would be kept
-  --yes, --prefs, --no-prefs, --verbose as for go
+  --only <stage>    run one stage: extract; retime (the EN files already in s2s;
+                    MKVToolNix is not needed); or go (the cards of what s2s holds,
+                    as go --season makes them)
+  --dry-run         extract, retime, delete and make nothing: print the EN track
+                    each episode would use, its JP file, whether its EN file and its
+                    retime are there and would be kept, and whether the AI grouping
+                    of each episode with a retime kept is cached; then go's checks
+  --grouping, --deck, --yes, --prefs, --no-prefs, --verbose as for go
 
-season prints a table (Episode, EN track, Retime), a note when the picked track
-differs between episodes, a last line with the exit code, and for each pair
-subsretimer did not save (below --min-match, no timed lines) the command that opens
-its editor on that pair: its Save writes the file the next run keeps. A JP file
-subsretimer cannot read gets no command; check the project's Subs1 encoding.
+season prints a table (Episode, EN track, Retime, AI, Status, Cards), a note when the
+picked track differs between episodes, go's TSV line with the exit code, and for
+each pair subsretimer did not save (below --min-match, no timed lines) the command
+that opens its editor on that pair: its Save writes the file the next run keeps. A
+JP file subsretimer cannot read gets no command; check the project's Subs1 encoding.
 
-Exit codes: 0 every episode ready, 3 some episodes not (the table says why), 1 an
-error before any work (usage, project, folder, no .mkv, MKVToolNix not found),
-130 cancelled.";
+Exit codes as go's: 0 every episode done, 3 some episodes skipped (the table says
+why), 1 an error before any work (usage, project, folder, no .mkv, MKVToolNix not
+found), a failed check before the cards (the table is printed), or a step of the
+run failed, 130 cancelled. With --only extract or retime: 0 every episode ready,
+3 some not.";
 
     public static CliOptions Parse(string[] args)
     {
@@ -183,6 +199,7 @@ error before any work (usage, project, folder, no .mkv, MKVToolNix not found),
           case "--only": o.Only = ParseOnly(Next()); seasonOptions.Add(a); break;
           case "--dry-run": o.DryRun = true; break;
           case "--grouping": o.Grouping = ParseGrouping(Next()); break;
+          case "--deck": o.Deck = ParseDeck(Next()); break;
           case "--yes": o.Yes = true; break;
           case "--prefs": o.PrefsPath = Next(); break;
           case "--no-prefs": o.NoPrefs = true; break;
@@ -204,11 +221,18 @@ error before any work (usage, project, folder, no .mkv, MKVToolNix not found),
       {
         if (seasonOption) throw new CliException("season takes the season folder as its argument (season <dir>), not --season");
         if (string.IsNullOrWhiteSpace(o.SeasonDir)) throw new CliException("season needs the season folder: season <dir> --project <file>");
-        if (o.Grouping != null) throw new CliException("--grouping is an option of go, not season");
-        if (o.Track != null && o.Only == SeasonStage.Retime)
-          throw new CliException("--track chooses the track to extract, and --only retime extracts nothing");
-        if (o.MinMatch != null && o.Only == SeasonStage.Extract)
-          throw new CliException("--min-match is passed to the retime, and --only extract does not retime");
+        if (o.Only is SeasonStage only)
+        {
+          string stage = "--only " + only.ToString().ToLowerInvariant();
+          if (o.Track != null && only != SeasonStage.Extract)
+            throw new CliException($"--track chooses the track to extract, and {stage} extracts nothing");
+          if (o.MinMatch != null && only != SeasonStage.Retime)
+            throw new CliException($"--min-match is passed to the retime, and {stage} does not retime");
+          if (o.Force && only == SeasonStage.Go)
+            throw new CliException("--force extracts and retimes again, and --only go does neither");
+          if (only != SeasonStage.Go && (o.Grouping != null || o.Deck != null))
+            throw new CliException($"{(o.Grouping != null ? "--grouping" : "--deck")} is for the cards, and {stage} makes none");
+        }
       }
       else if (seasonOptions.Count > 0)
         throw new CliException($"{seasonOptions[0]} is an option of season, not go");
@@ -233,8 +257,13 @@ error before any work (usage, project, folder, no .mkv, MKVToolNix not found),
     {
       "extract" => SeasonStage.Extract,
       "retime" => SeasonStage.Retime,
-      _ => throw new CliException($"--only takes extract or retime, not '{value}'"),
+      "go" => SeasonStage.Go,
+      _ => throw new CliException($"--only takes extract, retime or go, not '{value}'"),
     };
+
+    /// <summary>A deck name, as the GUI's field takes it (the settings trim it and turn spaces into '_').</summary>
+    private static string ParseDeck(string value)
+      => value.Trim().Length > 0 ? value : throw new CliException("--deck needs a name");
 
     private static SnippetMode ParseGrouping(string value) => value.ToLowerInvariant() switch
     {
