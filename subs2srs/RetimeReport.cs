@@ -16,7 +16,7 @@ namespace subs2srs
   /// </summary>
   /// <param name="ExitCode">0 saved, 2 nothing saved (see <see cref="Reason"/>).</param>
   /// <param name="Saved">The full path of the saved file, or null.</param>
-  /// <param name="Segments">The runs of target lines that moved together (one per cut in the video).</param>
+  /// <param name="Segments">The number of runs of target lines moved together, each by its own offset.</param>
   /// <param name="ReferenceCoverage">The share (0 to 1) of the reference's lines the retimed target covers, the number <c>--min-match</c> compares; null when nothing was aligned.</param>
   /// <param name="Reason">Why nothing was saved: <see cref="BelowMinMatch"/>, <see cref="NoTimedLines"/>, or null.</param>
   public sealed record RetimeReport(int ExitCode, string? Saved, int Segments, double? ReferenceCoverage, string? Reason)

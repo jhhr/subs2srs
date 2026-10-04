@@ -43,15 +43,20 @@ namespace subs2srs.Tests
     [InlineData("Show - 01.jpn.ssa", true)]
     [InlineData("Show - 01.en.srt", false)] // the English file beside the video
     [InlineData("Show - 01.ENG.ass", false)]
-    [InlineData("Show - 01.ja.cc.srt", false)] // a tag is one word
-    [InlineData("Show - 01..srt", false)]
+    [InlineData("Show - 01.ja.cc.srt", true)] // a tag of several words: closed captions
+    [InlineData("Show - 01.JPN.SDH.ass", true)]
+    [InlineData("Show - 01.en.sdh.srt", false)] // English when any word is
+    [InlineData("Show - 01.cc.En.srt", false)]
+    [InlineData("Show - 01..srt", false)] // an empty word
+    [InlineData("Show - 01.ja..srt", false)]
+    [InlineData("Show - 01.ja.cc..srt", false)]
     [InlineData("Show - 01.ja.txt", false)]
     [InlineData("Show - 01.ja.srt.bak", false)]
     [InlineData("Show - 01.mkv", false)]
     [InlineData("Show - 01 - Track 03 - English.srt", false)] // an older extract
     [InlineData("Show - 010.srt", false)]
     [InlineData("Show - 0.srt", false)]
-    public void IsJpFileOf_TheVideosName_OrItAndOneTag_NotEnglish(string fileName, bool expected)
+    public void IsJpFileOf_TheVideosName_OrItAndATag_NoWordEnglish(string fileName, bool expected)
       => Assert.Equal(expected, RetimeStage.IsJpFileOf(fileName, "Show - 01"));
 
     [Fact]
@@ -60,7 +65,7 @@ namespace subs2srs.Tests
       string[] videos = Videos("Show.S01E01.1080p", "Ep 1", "Ep 10", "Movie", "Movie.Extended", "[Grp] 第1話 (1080p) [AB12]", "It's 1");
       string[] names =
       {
-        "Ep 1.srt", "Ep 10.ja.ass", "It's 1.srt", "Movie.Extended.srt", "Movie.ja.srt", "Show.S01E01.1080p.en.srt",
+        "Ep 1.srt", "Ep 10.ja.ass", "It's 1.srt", "Movie.Extended.ja.cc.srt", "Movie.ja.srt", "Show.S01E01.1080p.en.srt",
         "Show.S01E01.1080p.ja.srt", "Show.S01E01.srt", "[Grp] 第1話 (1080p) [AB12].jpn.srt", "[Grp] 第1話 (1080p) [AB12].en.ass",
       };
 
@@ -68,7 +73,7 @@ namespace subs2srs.Tests
 
       Assert.Equal(new[]
         {
-          "Show.S01E01.1080p.ja.srt", "Ep 1.srt", "Ep 10.ja.ass", "Movie.ja.srt", "Movie.Extended.srt",
+          "Show.S01E01.1080p.ja.srt", "Ep 1.srt", "Ep 10.ja.ass", "Movie.ja.srt", "Movie.Extended.ja.cc.srt",
           "[Grp] 第1話 (1080p) [AB12].jpn.srt", "It's 1.srt",
         }.Select(n => Path.Combine(Season, n)),
         found.Select(f => f.Path));
@@ -169,7 +174,7 @@ namespace subs2srs.Tests
       Assert.True(outcome.Ready);
       Assert.Equal(ep.Output, outcome.OutputPath);
       Assert.True(File.Exists(ep.Output));
-      Assert.Equal("2 cuts, 95% of EN covered", outcome.Column);
+      Assert.Equal("2 segments, 95% of EN covered", outcome.Column);
       Assert.Null(outcome.EditorCommand);
 
       Started run = Assert.Single(started);
@@ -304,15 +309,18 @@ namespace subs2srs.Tests
     }
 
     [Theory]
-    [InlineData(true)]
-    [InlineData(false)]
-    public async Task Retime_NoJpOrNoEnFile_DeletesTheEpisodesJaFiles_EvenANewerOne_AndRunsNothing(bool noJp)
+    [InlineData("no JP", "no JP file named like the video")]
+    [InlineData("second JP", "2 JP files (番組 [01].ja.cc.srt, 番組 [01].srt)")]
+    [InlineData("no EN", "no .en file")]
+    [InlineData("second EN", "2 .en files (s2s/番組 [01].en.ass, s2s/番組 [01].en.srt)")]
+    public async Task Retime_NoJpOrNoEnFile_LeavesAnEditorFixAlone_NotReady_AndRunsNothing(string problem, string column)
     {
       Ep ep = Episode();
-      Write(ep.Output, "a retime from before the JP file went", T0.AddMinutes(1));
-      string anotherEpisode = Write(ep.S2s("番組 [010].ja.srt"), "episode 10", T0);
-      if (noJp) File.Delete(ep.Jp.Path!);
-      else File.Delete(ep.En.Path!);
+      string fix = Write(ep.Output, "fixed in the editor", T0.AddMinutes(1));
+      if (problem == "no JP") File.Delete(ep.Jp.Path!);
+      if (problem == "second JP") Write(Path.Combine(ep.Dir, "番組 [01].ja.cc.srt"), "1\n", T0);
+      if (problem == "no EN") File.Delete(ep.En.Path!);
+      if (problem == "second EN") Write(ep.S2s("番組 [01].en.srt"), "1\n", T0);
       string[] videos = { ep.Video };
       FoundFile jp = RetimeStage.FindJpFiles(ep.Dir, videos)[0];
       FoundFile en = RetimeStage.FindEnFiles(ep.Dir, videos)[0];
@@ -320,11 +328,14 @@ namespace subs2srs.Tests
 
       RetimeOutcome outcome = await RetimeStage.RetimeAsync(ep.Dir, ep.Video, jp, en, new RetimeOptions(Exe, "utf-8"));
 
-      Assert.Equal(noJp ? RetimeKind.NoJpFile : RetimeKind.NoEnFile, outcome.Kind);
-      Assert.Equal(noJp ? "no JP file named like the video" : "no .en file", outcome.Column);
+      Assert.Equal(problem.EndsWith("JP") ? RetimeKind.NoJpFile : RetimeKind.NoEnFile, outcome.Kind);
+      Assert.Equal(column.Replace('/', Path.DirectorySeparatorChar), outcome.Column);
+      Assert.False(outcome.Ready); // so season leaves it out of go
+      Assert.Null(outcome.OutputPath);
       Assert.Empty(started);
-      Assert.False(File.Exists(ep.Output));
-      Assert.True(File.Exists(anotherEpisode));
+      // A lookup problem never destroys hand work.
+      Assert.Equal("fixed in the editor", File.ReadAllText(fix));
+      Assert.Equal(T0.AddMinutes(1), File.GetLastWriteTimeUtc(fix));
     }
 
     [Fact]
@@ -354,9 +365,9 @@ namespace subs2srs.Tests
         new(exit, exit == 0 ? "/s2s/x.ja.srt" : null, segments, share, reason);
 
       Assert.Equal("kept", new RetimeOutcome(RetimeKind.Kept, "/s2s/x.ja.srt").Column);
-      Assert.Equal("2 cuts, 97% of EN covered", new RetimeOutcome(RetimeKind.Retimed, "/s2s/x.ja.srt", Report(0, 2, 0.974)).Column);
-      Assert.Equal("1 cut, 100% of EN covered", new RetimeOutcome(RetimeKind.Retimed, "/s2s/x.ja.srt", Report(0, 1, 1.0)).Column);
-      Assert.Equal("3 cuts", new RetimeOutcome(RetimeKind.Retimed, "/s2s/x.ja.srt", Report(0, 3, null)).Column);
+      Assert.Equal("2 segments, 97% of EN covered", new RetimeOutcome(RetimeKind.Retimed, "/s2s/x.ja.srt", Report(0, 2, 0.974)).Column);
+      Assert.Equal("1 segment, 100% of EN covered", new RetimeOutcome(RetimeKind.Retimed, "/s2s/x.ja.srt", Report(0, 1, 1.0)).Column);
+      Assert.Equal("3 segments", new RetimeOutcome(RetimeKind.Retimed, "/s2s/x.ja.srt", Report(0, 3, null)).Column);
       Assert.Equal("retimed", new RetimeOutcome(RetimeKind.Retimed, "/s2s/x.ja.srt").Column);
       // Cut down as subsretimer prints it: 79.9% is below a --min-match of 0.8, so not "80%".
       Assert.Equal("below --min-match (79%)", new RetimeOutcome(RetimeKind.BelowMinMatch, Report: Report(2, 2, 0.799, RetimeReport.BelowMinMatch)).Column);
@@ -443,7 +454,7 @@ namespace subs2srs.Tests
       RetimeOutcome[] first = await RunSeason();
 
       Assert.Equal(RetimeKind.Retimed, first[0].Kind);
-      Assert.Equal("2 cuts, 100% of EN covered", first[0].Column);
+      Assert.Equal("2 segments, 100% of EN covered", first[0].Column);
       Assert.Equal(Path.Combine(s2s, "第1話.ja.srt"), first[0].OutputPath);
       Assert.Contains("00:", File.ReadAllText(first[0].OutputPath!));
       Assert.Equal(RetimeKind.BelowMinMatch, first[1].Kind);

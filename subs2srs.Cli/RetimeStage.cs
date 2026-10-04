@@ -25,14 +25,18 @@ namespace subs2srs.Cli
   internal sealed record RetimeOutcome(RetimeKind Kind, string? OutputPath = null, RetimeReport? Report = null,
     string? Reason = null, string? EditorCommand = null)
   {
-    /// <summary>The episode has its <c>.ja</c> file, so <c>go</c> can make its cards. Otherwise it has none.</summary>
+    /// <summary>
+    /// The episode has a <c>.ja</c> file <c>go</c> should use, so it can get cards. Otherwise go
+    /// should leave it out: it has none, or, with no JP or no EN file found, one an earlier run
+    /// or the editor left, which a lookup problem never deletes.
+    /// </summary>
     public bool Ready => Kind is RetimeKind.Kept or RetimeKind.Retimed;
 
     public string Column => Kind switch
     {
       RetimeKind.Kept => "kept",
       RetimeKind.Retimed => Report == null ? "retimed"
-        : Cuts(Report.Segments) + (Report.ReferenceCoverage is double share ? ", " + Percent(share) + " of EN covered" : ""),
+        : Segments(Report.Segments) + (Report.ReferenceCoverage is double share ? ", " + Percent(share) + " of EN covered" : ""),
       RetimeKind.BelowMinMatch => "below --min-match" + (Report?.ReferenceCoverage is double share ? " (" + Percent(share) + ")" : ""),
       RetimeKind.NoTimedLines => "no timed lines",
       RetimeKind.NotSaved => "not saved",
@@ -40,11 +44,11 @@ namespace subs2srs.Cli
       _ => Reason ?? "",
     };
 
-    /// <summary>The report's segments, which the plan counts as the video's cuts.</summary>
-    private static string Cuts(int segments) =>
-      segments.ToString(CultureInfo.InvariantCulture) + (segments == 1 ? " cut" : " cuts");
+    /// <summary>The report's segments, the runs of target lines moved together, as subsretimer counts them.</summary>
+    private static string Segments(int segments) =>
+      segments.ToString(CultureInfo.InvariantCulture) + (segments == 1 ? " segment" : " segments");
 
-    /// <summary>A share as a whole percentage, cut down as subsretimer prints it (79.9% is "79%", below 80).</summary>
+    /// <summary>A share as a whole percentage, rounded down as subsretimer prints it (79.9% is "79%", below 80).</summary>
     internal static string Percent(double share) =>
       ((int)Math.Floor(share * 100 + 1e-9)).ToString(CultureInfo.InvariantCulture) + "%";
   }
@@ -69,7 +73,7 @@ namespace subs2srs.Cli
   /// (<see cref="RetimeAsync"/>) into <c>s2s/&lt;video name&gt;.ja.&lt;ext&gt;</c>, the Subs1
   /// file <c>go --season</c> takes. A retime newer than both its files is kept, so a fix saved
   /// from the editor survives later runs; any other is done again. After the stage an episode
-  /// has a <c>.ja</c> file exactly when its outcome is <see cref="RetimeOutcome.Ready"/>.
+  /// has a <c>.ja</c> file go should use exactly when its outcome is <see cref="RetimeOutcome.Ready"/>.
   /// </summary>
   internal static class RetimeStage
   {
@@ -118,9 +122,10 @@ namespace subs2srs.Cli
     /// Whether <paramref name="fileName"/> is named like a JP file of the video named
     /// <paramref name="videoName"/>: a subtitle file (<see cref="EpisodeList.SubsExtensions"/>)
     /// named <c>&lt;video name&gt;.&lt;ext&gt;</c> or <c>&lt;video name&gt;.&lt;tag&gt;.&lt;ext&gt;</c>,
-    /// the tag one word without a dot and not English (<see cref="EnglishTags"/>). Compared as
-    /// names, ignoring case, never as a wildcard pattern: video names hold dots and brackets, and
-    /// <c>Ep 1</c> is the start of <c>Ep 10</c>.
+    /// the tag one or more non-empty words split by dots (<c>ja</c>, <c>ja.cc</c>,
+    /// <c>jpn.sdh</c>), none of them English (<see cref="EnglishTags"/>: <c>en.sdh</c> and
+    /// <c>cc.en</c> are English files). Compared as names, ignoring case, never as a wildcard
+    /// pattern: video names hold dots and brackets, and <c>Ep 1</c> is the start of <c>Ep 10</c>.
     /// </summary>
     internal static bool IsJpFileOf(string fileName, string videoName)
     {
@@ -129,8 +134,8 @@ namespace subs2srs.Cli
       string stem = fileName.Substring(0, fileName.Length - ext.Length);
       if (stem.Equals(videoName, StringComparison.OrdinalIgnoreCase)) return true;
       if (!stem.StartsWith(videoName + ".", StringComparison.OrdinalIgnoreCase)) return false;
-      string tag = stem.Substring(videoName.Length + 1);
-      return tag.Length > 0 && !tag.Contains('.') && !EnglishTags.Contains(tag, StringComparer.OrdinalIgnoreCase);
+      string[] words = stem.Substring(videoName.Length + 1).Split('.');
+      return words.All(w => w.Length > 0) && !words.Any(w => EnglishTags.Contains(w, StringComparer.OrdinalIgnoreCase));
     }
 
     /// <summary>Each video's EN extract (<see cref="FindEnFiles(string, IReadOnlyList{string}, IReadOnlyCollection{string})"/>), reading the season's <c>s2s</c> folder once.</summary>
@@ -186,8 +191,11 @@ namespace subs2srs.Cli
       OperatingSystem.IsWindows() ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal;
 
     /// <summary>
-    /// Retime one episode (season plan C2). With no JP or no EN file, or when anything else
-    /// fails, the episode's <c>.ja</c> files are deleted, so <c>go</c> cannot take a stale one.
+    /// Retime one episode (season plan C2). With no JP or no EN file nothing is touched: a lookup
+    /// problem (a second JP candidate, a renamed file) must not destroy an editor fix, so a
+    /// <c>.ja</c> file may stay, and the caller leaves an episode that is not
+    /// <see cref="RetimeOutcome.Ready"/> out of <c>go</c>. When a retime runs and saves nothing,
+    /// fails or is cancelled, the episode's <c>.ja</c> files are gone afterwards.
     /// A retime newer than both its EN and JP file is kept (unless <see cref="RetimeOptions.Force"/>),
     /// without subsretimer, and any other <c>.ja</c> file of the episode deleted (go skips an
     /// episode with two). Otherwise the episode's <c>.ja</c> files and report are deleted and
@@ -201,6 +209,11 @@ namespace subs2srs.Cli
       RetimeOptions options, CancellationToken ct = default)
     {
       ct.ThrowIfCancellationRequested();
+      if (jp.Path == null)
+        return new RetimeOutcome(RetimeKind.NoJpFile, Reason: jp.Problem ?? NoJpFileReason);
+      if (en.Path == null)
+        return new RetimeOutcome(RetimeKind.NoEnFile, Reason: en.Problem ?? NoEnFileReason);
+
       string dir = Path.GetFullPath(seasonDir);
       string s2s = Path.Combine(dir, EpisodeList.SubsFolder);
       // Every .ja file go would take as this episode's Subs1.
@@ -208,15 +221,6 @@ namespace subs2srs.Cli
         ? EpisodeList.Named(Directory.GetFiles(s2s).Select(f => Path.GetFileName(f)).ToList(),
             Path.GetFileNameWithoutExtension(video), EpisodeList.Subs1Tag).Select(n => Path.Combine(s2s, n)).ToList()
         : new List<string>();
-
-      if (jp.Path == null || en.Path == null)
-      {
-        string? error = Delete(retimes);
-        if (error != null) return Failed(error);
-        return jp.Path == null
-          ? new RetimeOutcome(RetimeKind.NoJpFile, Reason: jp.Problem ?? NoJpFileReason)
-          : new RetimeOutcome(RetimeKind.NoEnFile, Reason: en.Problem ?? NoEnFileReason);
-      }
 
       string jpFile = Path.GetFullPath(jp.Path);
       string enFile = Path.GetFullPath(en.Path);
