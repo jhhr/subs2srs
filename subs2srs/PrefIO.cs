@@ -41,7 +41,7 @@ namespace subs2srs
         /// Path to the JSON preferences file.
         /// Lives next to where the old preferences.txt was.
         /// </summary>
-        private static string JsonPath =>
+        internal static string JsonPath =>
             Path.Combine(
                 Path.GetDirectoryName(ConstantSettings.SettingsFilename) ?? "",
                 "preferences.json");
@@ -68,17 +68,27 @@ namespace subs2srs
 
             try
             {
-                var json = File.ReadAllText(JsonPath, Encoding.UTF8);
-                ConstantSettings.Prefs =
-                    JsonSerializer.Deserialize<PreferencesData>(json, Opts)
-                    ?? new PreferencesData();
-                UpgradeDefaults(ConstantSettings.Prefs);
+                ReadFile(JsonPath);
             }
             catch (Exception ex)
             {
                 Console.Error.WriteLine($"Warning: failed to read preferences: {ex.Message}");
                 ConstantSettings.Prefs = new PreferencesData();
             }
+        }
+
+        /// <summary>
+        /// Load an existing preferences JSON file into ConstantSettings.Prefs, writing
+        /// nothing (subs2srs-cli reads the GUI's preferences and never writes them).
+        /// Throws when the file cannot be read or parsed; Prefs are then unchanged.
+        /// </summary>
+        internal static void ReadFile(string path)
+        {
+            var json = File.ReadAllText(path, Encoding.UTF8);
+            ConstantSettings.Prefs =
+                JsonSerializer.Deserialize<PreferencesData>(json, Opts)
+                ?? new PreferencesData();
+            UpgradeDefaults(ConstantSettings.Prefs);
         }
 
         /// <summary>
