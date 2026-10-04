@@ -32,6 +32,7 @@ namespace subs2srs
         private int currentStep = 0;
         private string currentStepName = "";
         private int[] cardsPerEpisode = Array.Empty<int>();
+        private string? importFile;
 
         /// <summary>
         /// A step returned null or false. The workers do that when the user cancelled, and the
@@ -74,6 +75,7 @@ namespace subs2srs
             this.currentStep = 0;
             this.currentStepName = "";
             this.cardsPerEpisode = Array.Empty<int>();
+            this.importFile = null;
             dialogProgress.StepsTotal = determineNumSteps(workerVars);
             this.workerStartTime = DateTime.Now;
         
@@ -87,7 +89,7 @@ namespace subs2srs
                     "Processing completed in {0:0.00} minutes.",
                     workerTotalTime.TotalMinutes);
                 UtilsMsg.showInfoMsg(doneMessage + "\n\n" + srsFormat);
-                return new PipelineResult(PipelineStatus.Completed, doneMessage, this.cardsPerEpisode);
+                return new PipelineResult(PipelineStatus.Completed, doneMessage, this.cardsPerEpisode, this.importFile);
             }
             catch (Exception ex)
             {
@@ -99,10 +101,10 @@ namespace subs2srs
                 // Only the reporter knows whether the user cancelled: a worker stops the same
                 // way when it failed, and a cancelled ffmpeg can make a step throw.
                 if (dialogProgress.Cancel || dialogProgress.Token.IsCancellationRequested)
-                    return new PipelineResult(PipelineStatus.Cancelled, "Action cancelled.", this.cardsPerEpisode);
+                    return new PipelineResult(PipelineStatus.Cancelled, "Action cancelled.", this.cardsPerEpisode, this.importFile);
 
                 return new PipelineResult(PipelineStatus.Failed,
-                    oneLine($"{this.currentStepName} failed: {failureDetail(ex)}"), this.cardsPerEpisode);
+                    oneLine($"{this.currentStepName} failed: {failureDetail(ex)}"), this.cardsPerEpisode, this.importFile);
             }
         }
 
@@ -221,8 +223,16 @@ namespace subs2srs
             nextStep(dialogProgress, "Generate import file");
             WorkerSrs srsWorker = new WorkerSrs();
 
-            if (!srsWorker.genSrs(workerVars, dialogProgress))
-                throw new StepStoppedException();
+            try
+            {
+                if (!srsWorker.genSrs(workerVars, dialogProgress))
+                    throw new StepStoppedException();
+            }
+            finally
+            {
+                // Also when it stopped part-way: the file is there, partly written.
+                this.importFile = srsWorker.ImportFile;
+            }
 
             List<List<InfoCombined>> combinedAllWithContext = ObjectCopier.Clone<List<List<InfoCombined>>>(workerVars.CombinedAll);
 

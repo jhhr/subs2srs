@@ -45,6 +45,9 @@ namespace subs2srs
     private int progressCount = 0;
     private InfoCombined mainComb;
 
+    /// <summary>The import file <see cref="genSrs"/> opened for writing, once it has; null before.</summary>
+    public string? ImportFile { get; private set; }
+
 
     /// <summary>
     /// Based on timings, determine if this line is within the context range.
@@ -124,6 +127,7 @@ namespace subs2srs
       string srsFilename = Path.Combine(Settings.Instance.OutputDir, nameStr);
 
       using var srsWriter = new StreamWriter(srsFilename, false, Encoding.UTF8);
+      ImportFile = srsFilename;
 
       // For each episode
       foreach (List<InfoCombined> combArray in workerVars.CombinedAll)

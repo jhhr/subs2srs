@@ -49,11 +49,19 @@ namespace subs2srs
     /// </summary>
     public IReadOnlyList<int> CardsPerEpisode { get; }
 
-    public PipelineResult(PipelineStatus status, string message, IReadOnlyList<int>? cardsPerEpisode = null)
+    /// <summary>
+    /// The import file (TSV) the run wrote, or opened and left partly written when it stopped
+    /// during or after "Generate import file"; null when it stopped before that step.
+    /// </summary>
+    public string? ImportFile { get; }
+
+    public PipelineResult(PipelineStatus status, string message, IReadOnlyList<int>? cardsPerEpisode = null,
+      string? importFile = null)
     {
       Status = status;
       Message = message;
       CardsPerEpisode = cardsPerEpisode ?? Array.Empty<int>();
+      ImportFile = importFile;
     }
   }
 }
