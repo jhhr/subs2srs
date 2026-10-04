@@ -11,6 +11,7 @@ TESTPROJ  = subs2srs.Tests/subs2srs.Tests.csproj
 
 UITESTPROJ = subs2srs.UiTests/subs2srs.UiTests.csproj
 EVALPROJ  = subs2srs.Eval/subs2srs.Eval.csproj
+CLIPROJ   = subs2srs.Cli/subs2srs.Cli.csproj
 WINDIR    = out/win-x64
 MSYS2     ?= C:/msys64
 PWSH      ?= pwsh   # use PWSH=powershell on a machine without PowerShell 7
@@ -57,4 +58,5 @@ clean:
 	rm -rf subs2srs.Tests/bin subs2srs.Tests/obj
 	rm -rf subs2srs.UiTests/bin subs2srs.UiTests/obj
 	rm -rf subs2srs.Eval/bin subs2srs.Eval/obj
+	rm -rf subs2srs.Cli/bin subs2srs.Cli/obj
 	rm -rf out
