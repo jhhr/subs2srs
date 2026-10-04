@@ -237,7 +237,7 @@ namespace subs2srs
           }
 
           string nameStr = name.createName(ConstantSettings.AudioFilenameFormatWithExt,
-            epNum + Settings.Instance.EpisodeStartNumber - 1,
+            Settings.Instance.EpisodeNumber(epNum - 1),
             item.seqNum, filenameStartTime, filenameEndTime, item.comb.Subs1.Text, lyricSubs2);
 
           string outName = $"{workerVars.MediaDir}{Path.DirectorySeparatorChar}{nameStr}";
@@ -365,7 +365,7 @@ namespace subs2srs
         }
 
         string nameStr = name.createName(ConstantSettings.AudioFilenameFormatWithExt,
-          episodeCount + Settings.Instance.EpisodeStartNumber - 1,
+          Settings.Instance.EpisodeNumber(episodeCount - 1),
           tempCount, filenameStartTime, filenameEndTime, comb.Subs1.Text, lyricSubs2);
 
         string outName = $"{mediaDir}{Path.DirectorySeparatorChar}{nameStr}";
@@ -386,7 +386,7 @@ namespace subs2srs
     private void tagAudio(UtilsName name, string outName, int episodeCount, int curEpisodeCount, int progressCount, int totalTracks,
       TimeSpan filenameStartTime, TimeSpan filenameEndTime, string lyricSubs1, string lyricSubs2)
     {
-      int episodeNum = episodeCount + Settings.Instance.EpisodeStartNumber - 1;
+      int episodeNum = Settings.Instance.EpisodeNumber(episodeCount - 1);
 
       string tagArtist = name.createName(ConstantSettings.AudioId3Artist, episodeNum,
         progressCount, filenameStartTime, filenameEndTime, lyricSubs1, lyricSubs2);

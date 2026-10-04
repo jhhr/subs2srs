@@ -79,7 +79,7 @@ namespace subs2srs
           string videoFileName = Settings.Instance.VideoClips.Files[epNum - 1];
 
           string nameStr = name.createName(ConstantSettings.SnapshotFilenameFormat,
-            epNum + Settings.Instance.EpisodeStartNumber - 1,
+            Settings.Instance.EpisodeNumber(epNum - 1),
             item.seqNum, startTime, endTime, comb.Subs1.Text, comb.Subs2.Text);
 
           string outFile = $"{workerVars.MediaDir}{Path.DirectorySeparatorChar}{nameStr}";

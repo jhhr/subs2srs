@@ -141,6 +141,52 @@ namespace subs2srs.Tests
             Assert.False(Settings.Instance.SpanEnabled);
         }
 
+        // ── Episode numbers: explicit list or counted from the start number ──
+
+        [Fact]
+        public void EpisodeNumber_WithoutExplicitNumbers_CountsFromStartNumber()
+        {
+            Settings.Instance.EpisodeStartNumber = 5;
+
+            Assert.Null(Settings.Instance.EpisodeNumbers);
+            Assert.Equal(5, Settings.Instance.EpisodeNumber(0));
+            Assert.Equal(6, Settings.Instance.EpisodeNumber(1));
+        }
+
+        [Fact]
+        public void EpisodeNumber_UsesExplicitNumbers_NotTheStartNumber()
+        {
+            Settings.Instance.EpisodeStartNumber = 5;
+            Settings.Instance.EpisodeNumbers = new[] { 1, 3 };
+
+            Assert.Equal(1, Settings.Instance.EpisodeNumber(0));
+            Assert.Equal(3, Settings.Instance.EpisodeNumber(1));
+        }
+
+        [Fact]
+        public void EpisodeNumber_IndexOutsideExplicitNumbers_Throws()
+        {
+            Settings.Instance.EpisodeNumbers = new[] { 1, 3 };
+
+            Assert.Throws<ArgumentOutOfRangeException>(() => Settings.Instance.EpisodeNumber(2));
+            Assert.Throws<ArgumentOutOfRangeException>(() => Settings.Instance.EpisodeNumber(-1));
+        }
+
+        [Fact]
+        public void EpisodeNumbers_ClearedByResetAndRestoreFrom()
+        {
+            Settings.Instance.EpisodeNumbers = new[] { 1, 3 };
+            var snapshot = Settings.Instance.Snapshot();
+            Assert.Null(snapshot.EpisodeNumbers); // not serialized, like Files
+
+            Settings.Instance.RestoreFrom(snapshot);
+            Assert.Null(Settings.Instance.EpisodeNumbers);
+
+            Settings.Instance.EpisodeNumbers = new[] { 1, 3 };
+            Settings.Instance.reset();
+            Assert.Null(Settings.Instance.EpisodeNumbers);
+        }
+
         // ── Snapshot round-trip through SubSettings ─────────────────────────
 
         [Fact]

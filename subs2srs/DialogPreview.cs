@@ -725,10 +725,9 @@ namespace subs2srs
             uint prev = _comboEp.GetSelected();
             // Use already-truncated Files array to respect Episode End # limit
             int n = Settings.Instance.Subs[0].Files.Length;
-            int first = Settings.Instance.EpisodeStartNumber;
             var names = new string[n];
             for (int i = 0; i < n; i++)
-                names[i] = (i + first).ToString();
+                names[i] = Settings.Instance.EpisodeNumber(i).ToString();
             _epModel = Gtk.StringList.New(names);
             _comboEp.SetModel(_epModel);
             _comboEp.SetSelected(
@@ -1958,7 +1957,7 @@ namespace subs2srs
 
             for (int ep = 0; ep < _wv.CombinedAll.Count && ep < _wv.Joins.Count; ep++)
             {
-                int episodeNumber = ep + Settings.Instance.EpisodeStartNumber;
+                int episodeNumber = Settings.Instance.EpisodeNumber(ep);
                 string subs1 = Settings.Instance.Subs[0].Files.Length > ep ? Settings.Instance.Subs[0].Files[ep] : "";
                 string subs2 = Settings.Instance.Subs[1].Files.Length > ep ? Settings.Instance.Subs[1].Files[ep] : null;
                 bool[] proposal = _wv.ProposedJoins != null && ep < _wv.ProposedJoins.Count ? _wv.ProposedJoins[ep] : null;

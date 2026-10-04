@@ -171,6 +171,30 @@ namespace subs2srs.Tests
         }
 
         [Fact]
+        public void EpisodeNumbers_NotSerialized_AndClearedOnLoad()
+        {
+            var path = Path.GetTempFileName() + ".s2s.json";
+            try
+            {
+                Settings.Instance.Reset();
+                Settings.Instance.EpisodeNumbers = new[] { 1, 3 };
+
+                ProjectIO.Save(path, Settings.Instance);
+
+                var json = File.ReadAllText(path);
+                Assert.DoesNotContain("episodeNumbers", json, StringComparison.OrdinalIgnoreCase);
+
+                ProjectIO.Load(path);
+                Assert.Null(Settings.Instance.EpisodeNumbers);
+            }
+            finally
+            {
+                if (File.Exists(path)) File.Delete(path);
+                Settings.Instance.Reset();
+            }
+        }
+
+        [Fact]
         public void TimeShiftRules_PreservedThroughRoundTrip()
         {
             var path = Path.GetTempFileName() + ".s2s.json";

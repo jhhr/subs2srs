@@ -1288,6 +1288,33 @@ namespace subs2srs
     [JsonPropertyName("episodeEndNumber")]
     public int EpisodeEndNumber { get; set; }
 
+    /// <summary>
+    /// Explicit episode number of each episode, by index into the <c>Files</c> arrays, so that
+    /// leaving an episode out keeps the numbers of the others. Null (the default, and what the
+    /// GUI uses) numbers them from <see cref="EpisodeStartNumber"/>. Not serialized, like the
+    /// <c>Files</c> arrays.
+    /// </summary>
+    [JsonIgnore]
+    public int[]? EpisodeNumbers { get; set; }
+
+    /// <summary>
+    /// The episode number of the episode at <paramref name="index"/> (0-based, as in the
+    /// <c>Files</c> arrays): <see cref="EpisodeNumbers"/>[index] when set, else
+    /// <c>index + EpisodeStartNumber</c>. Every episode number in names, tags, logs and the
+    /// per-episode time-shift rules comes from here.
+    /// </summary>
+    public int EpisodeNumber(int index)
+    {
+      if (EpisodeNumbers == null)
+        return index + EpisodeStartNumber;
+
+      if (index < 0 || index >= EpisodeNumbers.Length)
+        throw new ArgumentOutOfRangeException(nameof(index), index,
+          $"No episode number for episode index {index}: {EpisodeNumbers.Length} are set.");
+
+      return EpisodeNumbers[index];
+    }
+
     [JsonPropertyName("actorList")]
     public List<string> ActorList { get; set; }
 
@@ -1353,7 +1380,7 @@ namespace subs2srs
 
     /// <summary>
     /// Overwrite all mutable properties from <paramref name="other"/>.
-    /// Transient arrays (Files) are reset to empty.
+    /// Transient arrays (Files) are reset to empty, <see cref="EpisodeNumbers"/> to null.
     /// </summary>
     public void RestoreFrom(Settings other)
     {
@@ -1381,6 +1408,7 @@ namespace subs2srs
       DeckName = other.DeckName;
       EpisodeStartNumber = other.EpisodeStartNumber;
       EpisodeEndNumber = other.EpisodeEndNumber;
+      EpisodeNumbers = null;
 
       ActorList = other.ActorList;
 
@@ -1472,6 +1500,7 @@ namespace subs2srs
       DeckName = "";
       EpisodeStartNumber = 1;
       EpisodeEndNumber = 0;
+      EpisodeNumbers = null;
 
       ActorList = new List<string>();
 
