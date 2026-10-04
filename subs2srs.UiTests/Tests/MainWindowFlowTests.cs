@@ -79,6 +79,43 @@ namespace subs2srs.UiTests.Tests
             await scope.CloseAsync(win);
         }
 
+        /// <summary>
+        /// Pins the <c>Files</c> arrays that Go and the Preview work on: the patterns typed in
+        /// the window expanded, unsupported and hidden files dropped, every array cut to
+        /// End # - Start # + 1. <c>ProjectFilesTests</c> checks the command line's path against
+        /// the same <see cref="PatternSet"/>.
+        /// </summary>
+        [Fact]
+        public async Task SaveSettings_ExpandsThePatterns_AndCutsToTheEndNumber()
+        {
+            using var scope = new UiTestScope(_gtk);
+            var set = PatternSet.Create(scope.TempDir);
+
+            var win = await scope.OpenMainWindowAsync();
+
+            await _gtk.RunOnGtkAsync(async () =>
+            {
+                win._txtSubs1.SetText(set.Subs1Pattern);
+                win._txtSubs2.SetText(set.Subs2Pattern);
+                win._txtVideo.SetText(set.VideoPattern);
+                win._txtAudioFile.SetText(set.AudioPattern);
+                win._spinEpisodeStart.Value = PatternSet.Start;
+                win._spinEpisodeEnd.Value = PatternSet.End;
+                await Pump.IdleAsync();
+                win.SaveSettings();
+            });
+
+            var s = Settings.Instance;
+            Assert.Equal(set.Subs1, s.Subs[0].Files);
+            Assert.Equal(set.Subs2, s.Subs[1].Files);
+            Assert.Equal(set.Video, s.VideoClips.Files);
+            Assert.Equal(set.Audio, s.AudioClips.Files);
+            Assert.Equal(PatternSet.Start, s.EpisodeStartNumber);
+            Assert.Equal(PatternSet.End, s.EpisodeEndNumber);
+
+            await scope.CloseAsync(win);
+        }
+
         [Fact]
         public async Task Go_WithEmptyDeckName_ShowsOneErrorAndWritesNothing()
         {
