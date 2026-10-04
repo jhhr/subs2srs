@@ -537,9 +537,16 @@ namespace subs2srs.Tests
         RedirectStandardOutput = true,
         RedirectStandardError = true,
       };
-      foreach (string arg in new[] { "--command-line-charset", "UTF-8", "-q", "-o", output }.Concat(inputs))
+      // Windows passes the command line as UTF-16 and its mkvmerge has no
+      // --command-line-charset: it would take the option for a file name.
+      if (!OperatingSystem.IsWindows())
+      {
+        psi.ArgumentList.Add("--command-line-charset");
+        psi.ArgumentList.Add("UTF-8");
+        psi.Environment["LC_ALL"] = "C.UTF-8";
+      }
+      foreach (string arg in new[] { "-q", "-o", output }.Concat(inputs))
         psi.ArgumentList.Add(arg);
-      if (!OperatingSystem.IsWindows()) psi.Environment["LC_ALL"] = "C.UTF-8";
       using Process p = Process.Start(psi)!;
       Task<string> stdout = p.StandardOutput.ReadToEndAsync();
       Task<string> stderr = p.StandardError.ReadToEndAsync();
