@@ -105,8 +105,9 @@ namespace subs2srs.Cli
 
     /// <summary>
     /// <c>go</c>: load the project, resolve the episodes and set up the run; then with
-    /// <c>--dry-run</c> print the list and the checks, otherwise check, run the pipeline once
-    /// over every ready episode and print the table.
+    /// <c>--dry-run</c> print the list and the checks, otherwise check, group by AI first when
+    /// the project does (<see cref="AiPrePass"/>), run the pipeline once over every episode
+    /// still in and print the table.
     /// </summary>
     private static async Task<int> GoAsync(CliOptions options, TextWriter stdout, TextWriter stderr, CancellationToken token)
     {
@@ -114,11 +115,7 @@ namespace subs2srs.Cli
       Settings s = Settings.Instance;
       if (options.Grouping is SnippetMode grouping)
         s.Snippets.Mode = grouping;
-      else if (s.Snippets.Mode == SnippetMode.AI && !options.DryRun)
-        // So the mode is never AI when the pipeline starts, and its own AI step
-        // (WorkerSubs.aiGroupingOnGoApplies) never runs from here.
-        throw new CliException("the project groups snippets by AI, and go cannot ask the model yet (its AI pre-pass "
-          + "is not built yet). Run with --grouping rules or --grouping off to group them without the model.");
+      bool ai = s.Snippets.Mode == SnippetMode.AI;
       token.ThrowIfCancellationRequested();
       EpisodeList list = options.SeasonDir != null
         ? EpisodeList.FromSeason(options.SeasonDir, s)
@@ -129,7 +126,7 @@ namespace subs2srs.Cli
 
       if (options.DryRun)
       {
-        PrintEpisodes(list, stdout);
+        PrintEpisodes(list, ai && ready.Count > 0 ? CachedColumn(ready.Count, stderr, token) : null, stdout);
         List<GoProblem> found = RunChecks(s);
         PrintChecks(found, options.Yes, stderr);
         stderr.WriteLine(Summary(list) + " Dry run: nothing was made.");
@@ -141,7 +138,7 @@ namespace subs2srs.Cli
       stderr.WriteLine(Summary(list));
       if (ready.Count == 0)
       {
-        PrintTable(list, null, CliOptions.ExitSkipped, stdout);
+        PrintTable(list, null, null, CliOptions.ExitSkipped, stdout);
         return CliOptions.ExitSkipped;
       }
       List<GoProblem> problems = RunChecks(s);
@@ -157,9 +154,32 @@ namespace subs2srs.Cli
       token.ThrowIfCancellationRequested();
 
       var progress = new ConsoleProgress(stderr, token);
+      AiPrePass? pre = null;
+      if (ai)
+      {
+        try
+        {
+          pre = AiPrePass.Run(progress, token);
+        }
+        finally
+        {
+          progress.Done(); // what follows, a cancel or failure too, starts on a clean line
+        }
+        pre.Report(stderr);
+        if (pre.SkippedCount == ready.Count)
+        {
+          PrintTable(list, pre, null, CliOptions.ExitSkipped, stdout);
+          return CliOptions.ExitSkipped;
+        }
+        pre.DropSkipped(s);
+      }
       // The pipeline reports its end through UtilsMsg too (on stderr): the time taken, or the
-      // error with its stack trace, or "Action cancelled.".
-      PipelineResult result = await new SubsProcessor().StartAsync(progress);
+      // error with its stack trace, or "Action cancelled.". With the pre-pass's lines and
+      // groupings it skips its own first steps and AI step.
+      var processor = new SubsProcessor();
+      PipelineResult result = await (pre == null
+        ? processor.StartAsync(progress)
+        : processor.StartAsync(progress, pre.CombinedAll, pre.Joins.Select(j => j!).ToList()));
       progress.Done();
 
       if (result.Status == PipelineStatus.Failed)
@@ -168,12 +188,32 @@ namespace subs2srs.Cli
         DeleteUnfinishedImportFile(result.ImportFile, stderr);
       int code = result.Status switch
       {
-        PipelineStatus.Completed => list.SkippedCount > 0 ? CliOptions.ExitSkipped : CliOptions.ExitOk,
+        PipelineStatus.Completed => list.SkippedCount > 0 || pre?.SkippedCount > 0 ? CliOptions.ExitSkipped : CliOptions.ExitOk,
         PipelineStatus.Cancelled => CliOptions.ExitCancelled,
         _ => CliOptions.ExitError,
       };
-      PrintTable(list, result, code, stdout);
+      PrintTable(list, pre, result, code, stdout);
       return code;
+    }
+
+    /// <summary>
+    /// The dry run's AI column: whether each ready episode's AI grouping is cached, from the
+    /// pre-pass's first steps, without asking the model. Subtitles those steps cannot read make
+    /// it "unknown", said on stderr; the exit code stays the list's and the checks', as in the
+    /// other modes, where a dry run does not read the subtitles at all.
+    /// </summary>
+    private static string[] CachedColumn(int readyCount, TextWriter stderr, CancellationToken token)
+    {
+      try
+      {
+        List<List<InfoCombined>> lines = AiPrePass.FirstSteps(new ConsoleProgress(TextWriter.Null, token));
+        return AiPrePass.Cached(lines).Select(cached => cached ? "cached" : "not cached").ToArray();
+      }
+      catch (CliException ex)
+      {
+        stderr.WriteLine("subs2srs-cli: cannot tell which AI groupings are cached: " + ex.Message);
+        return Enumerable.Repeat("unknown", readyCount).ToArray();
+      }
     }
 
     /// <summary>
@@ -205,7 +245,7 @@ namespace subs2srs.Cli
     /// <summary>
     /// The checks the GUI's Go makes too (<see cref="GoChecks"/>), over the episodes that would
     /// run. A project that groups snippets by AI needs the model (and <c>claude</c>) whatever
-    /// the AI Grouping On Go preference says; only a dry run gets here with that mode, as yet.
+    /// the AI Grouping On Go preference says: the pre-pass asks it.
     /// </summary>
     private static List<GoProblem> RunChecks(Settings s)
       => GoChecks.Run(s, GoChecks.AudioStreamIndex(s), s.Snippets.Mode == SnippetMode.AI);
@@ -243,25 +283,34 @@ namespace subs2srs.Cli
 
     /// <summary>
     /// The table after a run, on stdout: one row per episode of the list with its number, video
-    /// name, "done", "skipped: " and why, "failed" or "cancelled", and its cards; then the
-    /// TSV's path, how many episodes it holds, and the exit code. <paramref name="result"/> is
-    /// null when no episode was ready and nothing ran.
+    /// name, what the AI pre-pass made of it (<see cref="AiOutcome.Column"/>; "-" when snippets
+    /// are not grouped by AI), "done", "skipped: " and why, "failed" or "cancelled", and its
+    /// cards; then the TSV's path, how many episodes it holds, and the exit code.
+    /// <paramref name="pre"/> is null without the pre-pass, <paramref name="result"/> when
+    /// nothing ran: no episode was ready, or the pre-pass skipped them all.
     /// </summary>
-    internal static void PrintTable(EpisodeList list, PipelineResult? result, int exitCode, TextWriter stdout)
+    internal static void PrintTable(EpisodeList list, AiPrePass? pre, PipelineResult? result, int exitCode, TextWriter stdout)
     {
-      var table = new TextTable("#", "Episode", "Status", "Cards");
-      int index = 0; // into the run's Files arrays, and so into CardsPerEpisode: the ready episodes in order
+      var table = new TextTable("#", "Episode", "AI", "Status", "Cards");
+      int readyIndex = 0; // into the pre-pass's outcomes: the ready episodes in order
+      int index = 0; // into the run's Files arrays, and so into CardsPerEpisode: the episodes that ran, in order
       foreach (Episode e in list.Episodes)
       {
         string number = e.Number.ToString(CultureInfo.InvariantCulture);
         string name = Path.GetFileNameWithoutExtension(e.Video ?? e.Subs1 ?? "");
         if (e.Skipped)
         {
-          table.Add(number, name, "skipped: " + e.SkipReason, "-");
+          table.Add(number, name, "-", "skipped: " + e.SkipReason, "-");
+          continue;
+        }
+        AiOutcome? ai = pre?.Outcomes[readyIndex++];
+        if (ai != null && ai.Skipped)
+        {
+          table.Add(number, name, ai.Column, "skipped: " + ai.SkipReason, "-");
           continue;
         }
         int i = index++;
-        PipelineStatus ran = result!.Status; // an episode was ready, so the run started
+        PipelineStatus ran = result!.Status; // an episode is in the run, so the run started
         string status = ran switch
         {
           PipelineStatus.Completed => "done",
@@ -271,13 +320,13 @@ namespace subs2srs.Cli
         string cards = ran == PipelineStatus.Completed && i < result.CardsPerEpisode.Count
           ? result.CardsPerEpisode[i].ToString(CultureInfo.InvariantCulture)
           : "-";
-        table.Add(number, name, status, cards);
+        table.Add(number, name, ai?.Column ?? "-", status, cards);
       }
       foreach (string line in table.Lines())
         stdout.WriteLine(line);
 
       bool written = result?.Status == PipelineStatus.Completed && result.ImportFile != null;
-      int done = written ? list.Episodes.Count(e => !e.Skipped) : 0;
+      int done = written ? index : 0;
       stdout.WriteLine(FormattableString.Invariant(
         $"{(list.SeasonDir != null ? "season TSV" : "TSV")}: {(written ? result!.ImportFile : "not written")} ({done} of {list.Episodes.Count} episodes); exit {exitCode}"));
     }
@@ -321,24 +370,27 @@ namespace subs2srs.Cli
     }
 
     /// <summary>
-    /// One row per episode: number, video, Subs1, Subs2 (and audio file), and "ready" or why
-    /// it is skipped. Season paths are shown relative to the season folder, pattern-mode
-    /// paths by file name.
+    /// One row per episode: number, video, Subs1, Subs2 (and audio file), whether its AI
+    /// grouping is cached (<paramref name="cached"/>, one per ready episode; "-" when null:
+    /// snippets not grouped by AI), and "ready" or why it is skipped. Season paths are shown
+    /// relative to the season folder, pattern-mode paths by file name.
     /// </summary>
-    internal static void PrintEpisodes(EpisodeList list, TextWriter stdout)
+    internal static void PrintEpisodes(EpisodeList list, string[]? cached, TextWriter stdout)
     {
       bool audio = list.Episodes.Exists(e => e.Audio != null);
       var table = audio
-        ? new TextTable("#", "Video", "Subs1", "Subs2", "Audio", "Status")
-        : new TextTable("#", "Video", "Subs1", "Subs2", "Status");
+        ? new TextTable("#", "Video", "Subs1", "Subs2", "Audio", "AI", "Status")
+        : new TextTable("#", "Video", "Subs1", "Subs2", "AI", "Status");
+      int readyIndex = 0;
       foreach (Episode e in list.Episodes)
       {
         string status = e.Skipped ? "skipped: " + e.SkipReason : "ready";
+        string ai = e.Skipped || cached == null ? "-" : cached[readyIndex++];
         string number = e.Number.ToString(CultureInfo.InvariantCulture);
         if (audio)
-          table.Add(number, Show(list, e.Video), Show(list, e.Subs1), Show(list, e.Subs2), Show(list, e.Audio), status);
+          table.Add(number, Show(list, e.Video), Show(list, e.Subs1), Show(list, e.Subs2), Show(list, e.Audio), ai, status);
         else
-          table.Add(number, Show(list, e.Video), Show(list, e.Subs1), Show(list, e.Subs2), status);
+          table.Add(number, Show(list, e.Video), Show(list, e.Subs1), Show(list, e.Subs2), ai, status);
       }
       foreach (string line in table.Lines())
         stdout.WriteLine(line);

@@ -40,12 +40,15 @@ namespace subs2srs.Cli
     public void SetDuration(TimeSpan duration) { }
     public void OnFFmpegOutput(object sender, DataReceivedEventArgs e) { }
 
-    public void NextStep(int step, string description)
+    public void NextStep(int step, string description) => Line($"Step {step} of {StepsTotal}: {description}");
+
+    /// <summary>A line of its own, as a step's label is: the AI pre-pass's steps and episodes.</summary>
+    public void Line(string text)
     {
       lock (gate)
       {
         ClearLine();
-        writer.WriteLine($"Step {step} of {StepsTotal}: {description}");
+        writer.WriteLine(text);
         last = "";
         lastTenth = -1;
       }

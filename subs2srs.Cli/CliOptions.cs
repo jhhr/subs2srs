@@ -52,10 +52,11 @@ encodings, audio, snapshots, deck name and output directory.
                     without exactly one of each is skipped and keeps its number; videos
                     after the project's Episode End # are left out. Audio clips come
                     from the videos.
-  --dry-run         print the episode list and the checks before starting, and stop
+  --dry-run         print the episode list (with whether each episode's AI grouping
+                    is cached) and the checks before starting, and stop
   --grouping <mode> group the lines into snippets by this mode instead of the
-                    project's: rules or off. Needed when the project groups by AI: go
-                    cannot ask the model yet.
+                    project's: rules or off, so a project that groups by AI runs
+                    without the model.
   --yes             answer yes when asked to confirm (the answer is no otherwise),
                     as at a warning of the checks
   --prefs <file>    read this preferences JSON file instead of the user's preferences.json
@@ -68,11 +69,22 @@ Without --season, the files of the project's patterns are paired by position, as
 the GUI, and counts that differ are refused. The checks before starting are the GUI's
 Go's: the output directory can be written, a deck name, ffmpeg (and the encoder of
 animated snapshots), claude when snippets are grouped by AI through it, and the same
-audio stream in every video (a warning). Then go makes the cards of every ready
-episode in one run, into one import file (TSV), and prints a table: each episode,
-done, skipped and why, or failed, and its cards; then the TSV's path. The table (with
---dry-run, the episode list) goes to stdout and everything else, the progress
-included, to stderr. Preferences are read, never written.
+audio stream in every video (a warning).
+
+When the project groups snippets by AI, go first asks the model to group each ready
+episode, as the GUI's Preview does; a cached answer is used without asking. An
+episode the model cannot group is skipped, not grouped by the rules; one where only
+some parts failed keeps the rules' grouping for those parts, with a warning. Once
+the Claude usage limit is reached, every remaining episode without a cached answer
+is skipped without asking; run go again after the limit resets, and it asks only
+for those.
+
+Then go makes the cards of every episode still in, in one run, into one import file
+(TSV), and prints a table: each episode, its AI grouping (cached, grouped, k/n by
+rules, usage limit, failed; - without AI), done, skipped and why, or failed, and its
+cards; then the TSV's path. The table (with --dry-run, the episode list) goes to
+stdout and everything else, the progress included, to stderr. Preferences are read,
+never written.
 
 Exit codes: 0 every episode done (with --dry-run: resolved), 3 some episodes skipped,
 1 an error before any work (usage, project, folder, file counts, a failed check, no

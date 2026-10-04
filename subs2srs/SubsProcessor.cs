@@ -295,7 +295,7 @@ namespace subs2srs
             Directory.CreateDirectory(getMediaDir(Settings.Instance.OutputDir, Settings.Instance.DeckName));
         }
 
-        private string getMediaDir(string outDir, string deckName)
+        internal static string getMediaDir(string outDir, string deckName)
         {
             return string.Format(@"{0}{1}{2}.media", outDir, Path.DirectorySeparatorChar, deckName);
         }

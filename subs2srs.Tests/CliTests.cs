@@ -14,17 +14,18 @@ namespace subs2srs.Tests
   /// subs2srs-cli through <see cref="CliRunner.RunAsync"/> in-process, and once as the built
   /// console: <c>go --dry-run</c> (the episode list and the checks before starting) and
   /// <c>go</c>'s runs of the pipeline, their table and exit codes. <see cref="EpisodeListTests"/>
-  /// covers the list itself, <see cref="GoChecksTests"/> the checks.
+  /// covers the list itself, <see cref="GoChecksTests"/> the checks, <see cref="CliAiPrePassTests"/>
+  /// go on a project grouped by AI.
   /// </summary>
   public class CliTests
   {
-    private sealed record Result(int Code, string Stdout, string Stderr)
+    internal sealed record Result(int Code, string Stdout, string Stderr)
     {
       public string[] Lines => Stdout.Split(Environment.NewLine, StringSplitOptions.RemoveEmptyEntries);
       public override string ToString() => $"exit {Code}\n--- stdout\n{Stdout}--- stderr\n{Stderr}";
     }
 
-    private static async Task<Result> Run(params string[] args)
+    internal static async Task<Result> Run(params string[] args)
     {
       var stdout = new StringWriter();
       var stderr = new StringWriter();
@@ -33,7 +34,7 @@ namespace subs2srs.Tests
     }
 
     /// <summary>Save the scope's settings, after <paramref name="edit"/>, as a project; then reset them so only the file carries them.</summary>
-    private static string SaveProject(TestScope scope, Action<Settings>? edit = null)
+    internal static string SaveProject(TestScope scope, Action<Settings>? edit = null)
     {
       var s = Settings.Instance;
       s.DeckName = "Show";
@@ -50,7 +51,7 @@ namespace subs2srs.Tests
     /// named ffmpeg in the Tools Directory stands in for it on a machine without one. A dry run
     /// starts it only in the audio-stream check, which then finds no stream. Returns the folder.
     /// </summary>
-    private static string FakeFfmpeg(TestScope scope)
+    internal static string FakeFfmpeg(TestScope scope)
     {
       string tools = Path.Combine(scope.TempDir, "tools");
       Directory.CreateDirectory(tools);
@@ -60,7 +61,7 @@ namespace subs2srs.Tests
     }
 
     /// <summary>A season folder (a space, brackets and Japanese in its name) holding these empty files.</summary>
-    private static string MakeSeason(TestScope scope, params string[] files)
+    internal static string MakeSeason(TestScope scope, params string[] files)
     {
       string dir = Path.Combine(scope.TempDir, "Show S1 [Grp] 日本");
       Directory.CreateDirectory(Path.Combine(dir, "s2s"));
@@ -145,11 +146,11 @@ namespace subs2srs.Tests
 
       Assert.True(r.Code == CliOptions.ExitSkipped, r.ToString());
       string[][] rows = r.Lines.Select(EpisodeListTests.Cells).ToArray();
-      Assert.Equal(new[] { "#", "Video", "Subs1", "Subs2", "Status" }, rows[0]);
+      Assert.Equal(new[] { "#", "Video", "Subs1", "Subs2", "AI", "Status" }, rows[0]);
       string s2s(string name) => Path.Combine("s2s", name);
-      Assert.Equal(new[] { "1", "[Grp] 進撃 - 01.mkv", s2s("[Grp] 進撃 - 01.ja.srt"), s2s("[Grp] 進撃 - 01.en.ass"), "ready" }, rows[1]);
-      Assert.Equal(new[] { "2", "[Grp] 進撃 - 02.mkv", "-", s2s("[Grp] 進撃 - 02.en.ass"), "skipped: no .ja file" }, rows[2]);
-      Assert.Equal(new[] { "3", "[Grp] 進撃 - 03.mkv", s2s("[Grp] 進撃 - 03.ja.srt"), s2s("[Grp] 進撃 - 03.en.ass"), "ready" }, rows[3]);
+      Assert.Equal(new[] { "1", "[Grp] 進撃 - 01.mkv", s2s("[Grp] 進撃 - 01.ja.srt"), s2s("[Grp] 進撃 - 01.en.ass"), "-", "ready" }, rows[1]);
+      Assert.Equal(new[] { "2", "[Grp] 進撃 - 02.mkv", "-", s2s("[Grp] 進撃 - 02.en.ass"), "-", "skipped: no .ja file" }, rows[2]);
+      Assert.Equal(new[] { "3", "[Grp] 進撃 - 03.mkv", s2s("[Grp] 進撃 - 03.ja.srt"), s2s("[Grp] 進撃 - 03.en.ass"), "-", "ready" }, rows[3]);
       Assert.Equal(4, rows.Length);
       Assert.Contains($"3 episode(s) in {season}: 2 ready, 1 skipped.", r.Stderr);
       // The process-wide hooks are the scope's again (its recorder answers yes).
@@ -195,8 +196,8 @@ namespace subs2srs.Tests
       Assert.True(r.Code == CliOptions.ExitOk, r.ToString());
       string[][] rows = r.Lines.Select(EpisodeListTests.Cells).ToArray();
       Assert.Equal(4, rows.Length);
-      Assert.Equal(new[] { "2", Path.GetFileName(set.Video[0]), Path.GetFileName(set.Subs1[0]), Path.GetFileName(set.Subs2[0]), "ready" }, rows[1]);
-      Assert.Equal(new[] { "4", Path.GetFileName(set.Video[2]), Path.GetFileName(set.Subs1[2]), Path.GetFileName(set.Subs2[2]), "ready" }, rows[3]);
+      Assert.Equal(new[] { "2", Path.GetFileName(set.Video[0]), Path.GetFileName(set.Subs1[0]), Path.GetFileName(set.Subs2[0]), "-", "ready" }, rows[1]);
+      Assert.Equal(new[] { "4", Path.GetFileName(set.Video[2]), Path.GetFileName(set.Subs1[2]), Path.GetFileName(set.Subs2[2]), "-", "ready" }, rows[3]);
     }
 
     [Fact]
@@ -326,7 +327,7 @@ namespace subs2srs.Tests
     /// A project for a short real run: audio clips from the video and snapshots (no video
     /// clips or animated snapshots), snippets grouped by the rules.
     /// </summary>
-    private static string SaveRunProject(TestScope scope, Action<Settings>? edit = null) => SaveProject(scope, s =>
+    internal static string SaveRunProject(TestScope scope, Action<Settings>? edit = null) => SaveProject(scope, s =>
     {
       s.Subs[0].Encoding = "utf-8";
       s.Subs[1].Encoding = "utf-8";
@@ -359,7 +360,7 @@ namespace subs2srs.Tests
     }
 
     /// <summary>The tag (first column) of every card in the TSV.</summary>
-    private static string[] Tags(string tsv)
+    internal static string[] Tags(string tsv)
       => File.ReadAllLines(tsv, Encoding.UTF8).Where(l => l.Length > 0).Select(l => l.Split('\t')[0]).ToArray();
 
     /// <summary>
@@ -384,11 +385,11 @@ namespace subs2srs.Tests
 
       Assert.True(r.Code == CliOptions.ExitSkipped, r.ToString());
       string[][] rows = r.Lines.Select(EpisodeListTests.Cells).ToArray();
-      Assert.Equal(new[] { "#", "Episode", "Status", "Cards" }, rows[0]);
-      Assert.Equal(new[] { "1", "[Grp] 進撃 - 01", "done", "3" }, rows[1]);
-      Assert.Equal(new[] { "2", "[Grp] 進撃 - 02", "skipped: no .ja file", "-" }, rows[2]);
-      Assert.Equal(new[] { "3", "[Grp] 進撃 - 03", "done", "3" }, rows[3]);
-      Assert.Equal(new[] { "10", "[Grp] 進撃 - 10", "skipped: no .ja file; no .en file", "-" }, rows[10]);
+      Assert.Equal(new[] { "#", "Episode", "AI", "Status", "Cards" }, rows[0]);
+      Assert.Equal(new[] { "1", "[Grp] 進撃 - 01", "-", "done", "3" }, rows[1]);
+      Assert.Equal(new[] { "2", "[Grp] 進撃 - 02", "-", "skipped: no .ja file", "-" }, rows[2]);
+      Assert.Equal(new[] { "3", "[Grp] 進撃 - 03", "-", "done", "3" }, rows[3]);
+      Assert.Equal(new[] { "10", "[Grp] 進撃 - 10", "-", "skipped: no .ja file; no .en file", "-" }, rows[10]);
       string tsv = Path.Combine(scope.OutputDir, "Show.tsv");
       Assert.Equal($"season TSV: {tsv} (2 of 10 episodes); exit 3", r.Lines[11]);
       Assert.Equal(12, r.Lines.Length);
@@ -433,8 +434,8 @@ namespace subs2srs.Tests
       Assert.True(r.Code == CliOptions.ExitOk, r.ToString());
       Assert.Empty(fake.Requests);
       string[][] rows = r.Lines.Select(EpisodeListTests.Cells).ToArray();
-      Assert.Equal(new[] { "1", "ep 01", "done", "3" }, rows[1]); // the model would join all four
-      Assert.Equal(new[] { "2", "ep 02", "done", "3" }, rows[2]);
+      Assert.Equal(new[] { "1", "ep 01", "-", "done", "3" }, rows[1]); // the model would join all four
+      Assert.Equal(new[] { "2", "ep 02", "-", "done", "3" }, rows[2]);
       string tsv = Path.Combine(scope.OutputDir, "Show.tsv");
       Assert.Equal($"TSV: {tsv} (2 of 2 episodes); exit 0", r.Lines[3]);
       Assert.Equal(new[] { "Show_1", "Show_1", "Show_1", "Show_2", "Show_2", "Show_2" }, Tags(tsv));
@@ -462,7 +463,7 @@ namespace subs2srs.Tests
       Assert.Contains(errors, l => l.StartsWith("subs2srs-cli: Generate audio clips failed: ffmpeg exited with code ", StringComparison.Ordinal));
       Assert.Contains($"subs2srs-cli: deleted {tsv}: the run stopped after writing it, before the media of its cards were made.", errors);
       Assert.False(File.Exists(tsv));
-      Assert.Equal(new[] { "1", "a", "failed", "-" }, EpisodeListTests.Cells(r.Lines[1]));
+      Assert.Equal(new[] { "1", "a", "-", "failed", "-" }, EpisodeListTests.Cells(r.Lines[1]));
       Assert.Equal("season TSV: not written (0 of 1 episodes); exit 1", r.Lines[2]);
     }
 
@@ -477,8 +478,8 @@ namespace subs2srs.Tests
       Result r = await Run("go", "--project", project, "--season", season, "--no-prefs");
 
       Assert.True(r.Code == CliOptions.ExitSkipped, r.ToString());
-      Assert.Equal(new[] { "1", "a", "skipped: no .ja file; no .en file", "-" }, EpisodeListTests.Cells(r.Lines[1]));
-      Assert.Equal(new[] { "2", "b", "skipped: no .en file", "-" }, EpisodeListTests.Cells(r.Lines[2]));
+      Assert.Equal(new[] { "1", "a", "-", "skipped: no .ja file; no .en file", "-" }, EpisodeListTests.Cells(r.Lines[1]));
+      Assert.Equal(new[] { "2", "b", "-", "skipped: no .en file", "-" }, EpisodeListTests.Cells(r.Lines[2]));
       Assert.Equal("season TSV: not written (0 of 2 episodes); exit 3", r.Lines[3]);
       Assert.Empty(Directory.GetFileSystemEntries(scope.OutputDir));
     }
@@ -519,23 +520,6 @@ namespace subs2srs.Tests
 
       Assert.True(r.Code == CliOptions.ExitError, r.ToString());
       Assert.Contains("subs2srs-cli: nothing was made: the answer to the warning above was no; with --yes go answers yes and goes on.", r.Stderr);
-      Assert.Equal("", r.Stdout);
-      Assert.Empty(Directory.GetFileSystemEntries(scope.OutputDir));
-    }
-
-    /// <summary>Snippet mode AI needs the AI pre-pass, which go does not have yet: refused before anything is read or written.</summary>
-    [Fact]
-    public async Task Go_InAiMode_WithoutGrouping_IsRefused()
-    {
-      using var scope = new TestScope();
-      string project = SaveRunProject(scope, s => s.Snippets.Mode = SnippetMode.AI);
-      string season = MakeSeason(scope, SeasonMissingJp);
-
-      Result r = await Run("go", "--project", project, "--season", season, "--no-prefs");
-
-      Assert.True(r.Code == CliOptions.ExitError, r.ToString());
-      Assert.Contains("go cannot ask the model yet", r.Stderr);
-      Assert.Contains("--grouping rules", r.Stderr);
       Assert.Equal("", r.Stdout);
       Assert.Empty(Directory.GetFileSystemEntries(scope.OutputDir));
     }
