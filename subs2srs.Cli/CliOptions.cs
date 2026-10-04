@@ -50,8 +50,9 @@ encodings, audio, snapshots, deck name and output directory.
                     without exactly one of each is skipped and keeps its number; videos
                     after the project's Episode End # are left out. Audio clips come
                     from the videos.
-  --dry-run         print the episode list and stop
-  --yes             answer yes when asked to confirm (the answer is no otherwise)
+  --dry-run         print the episode list and the checks before starting, and stop
+  --yes             answer yes when asked to confirm (the answer is no otherwise),
+                    as at a warning of the checks
   --prefs <file>    read this preferences JSON file instead of the user's preferences.json
   --no-prefs        do not read preferences.json
   --verbose         echo the application log to stderr
@@ -59,13 +60,16 @@ encodings, audio, snapshots, deck name and output directory.
   --version         the version
 
 Without --season, the files of the project's patterns are paired by position, as in
-the GUI, and counts that differ are refused. The episode list goes to stdout and
+the GUI, and counts that differ are refused. The checks before starting are the GUI's
+Go's: the output directory can be written, a deck name, ffmpeg (and the encoder of
+animated snapshots), claude when snippets are grouped by AI through it, and the same
+audio stream in every video (a warning). The episode list goes to stdout and
 everything else to stderr. Preferences are read, never written.
 
 Not built yet: go without --dry-run.
 
 Exit codes: 0 every episode resolved, 3 some episodes skipped, 1 error before any work
-(usage, project, folder, file counts), 130 cancelled.";
+(usage, project, folder, file counts, a failed check), 130 cancelled.";
 
     public static CliOptions Parse(string[] args)
     {

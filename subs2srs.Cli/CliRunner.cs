@@ -1,6 +1,8 @@
 using System;
+using System.Collections.Generic;
 using System.Globalization;
 using System.IO;
+using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 
@@ -113,6 +115,8 @@ namespace subs2srs.Cli
         : EpisodeList.FromPatterns(Settings.Instance);
 
       PrintEpisodes(list, stdout);
+      List<GoProblem> problems = RunChecks(list);
+      PrintChecks(problems, options.Yes, stderr);
       int skipped = list.SkippedCount;
       string from = list.SeasonDir != null ? "in " + list.SeasonDir : "from the project's patterns";
       string leftOut = list.LeftOut > 0
@@ -120,7 +124,47 @@ namespace subs2srs.Cli
         : "";
       stderr.WriteLine(FormattableString.Invariant(
         $"{list.Episodes.Count} episode(s) {from}: {list.Episodes.Count - skipped} ready, {skipped} skipped{leftOut}. Dry run: nothing was made."));
+      // A warning leaves the exit code alone: whether go would stop at it is up to --yes.
+      if (problems.Exists(p => p.IsError)) return Task.FromResult(CliOptions.ExitError);
       return Task.FromResult(skipped > 0 ? CliOptions.ExitSkipped : CliOptions.ExitOk);
+    }
+
+    /// <summary>
+    /// The checks the GUI's Go makes too (<see cref="GoChecks"/>), over the episodes that would
+    /// run. The command line asks the model whenever the project groups snippets by AI,
+    /// whatever the AI Grouping On Go preference says.
+    /// </summary>
+    private static List<GoProblem> RunChecks(EpisodeList list)
+    {
+      Settings s = Settings.Instance;
+      // Pattern mode resolved the project's own files; in season mode the run's videos are the ready episodes'.
+      if (list.SeasonDir != null)
+        s.VideoClips.Files = list.Episodes.Where(e => !e.Skipped && e.Video != null).Select(e => e.Video!).ToArray();
+      return GoChecks.Run(s, GoChecks.AudioStreamIndex(s), s.Snippets.Mode == SnippetMode.AI);
+    }
+
+    /// <summary>
+    /// The checks' findings on stderr, under the table: "error: " or "warning: " and the message
+    /// (its further lines indented), then what a run would do at a warning, which <c>--yes</c> decides.
+    /// </summary>
+    internal static void PrintChecks(List<GoProblem> problems, bool yes, TextWriter stderr)
+    {
+      if (problems.Count == 0)
+      {
+        stderr.WriteLine("Checks before starting: all passed.");
+        return;
+      }
+      foreach (GoProblem p in problems)
+      {
+        string[] lines = p.Message.Replace("\r\n", "\n").TrimEnd().Split('\n');
+        stderr.WriteLine((p.IsError ? "error: " : "warning: ") + lines[0]);
+        foreach (string line in lines.Skip(1))
+          stderr.WriteLine(line.Length > 0 ? "  " + line : "");
+      }
+      if (problems.Exists(p => !p.IsError))
+        stderr.WriteLine(yes
+          ? "With --yes, go answers yes to the warning and goes on."
+          : "Without --yes, go answers no to the warning and stops; with --yes it goes on.");
     }
 
     private static void LoadProject(string path)

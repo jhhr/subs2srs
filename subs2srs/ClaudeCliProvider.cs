@@ -70,10 +70,16 @@ namespace subs2srs
     {
       Model = model ?? throw new ArgumentNullException(nameof(model));
       this.retry = retry ?? new RetryPolicy();
-      Executable = executable ?? ExecutableOverride ?? ClaudeCli.Find(ConstantSettings.ClaudeCliPath);
+      Executable = executable ?? ResolveExecutable();
       this.runner = runner ?? RunnerOverride ?? RunProcessAsync;
       this.help = help ?? HelpOverride ?? ReadHelp;
     }
+
+    /// <summary>
+    /// The executable a provider built without one uses: the test hook, else the configured
+    /// path or the one on PATH (<see cref="ClaudeCli.Find"/>). Null or blank when there is none.
+    /// </summary>
+    public static string? ResolveExecutable() => ExecutableOverride ?? ClaudeCli.Find(ConstantSettings.ClaudeCliPath);
 
     /// <summary>What to tell the user when no executable could be found.</summary>
     public const string NoCliMessage =

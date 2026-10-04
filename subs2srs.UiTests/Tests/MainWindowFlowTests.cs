@@ -146,5 +146,44 @@ namespace subs2srs.UiTests.Tests
 
             await scope.CloseAsync(win);
         }
+
+        /// <summary>
+        /// The checks before starting (<see cref="GoChecks"/>) refuse an output directory that
+        /// cannot be created, naming it, before the run starts. Without them the run started and
+        /// failed with a bare "Cannot write to output directory." and the bar read "Finished!".
+        /// </summary>
+        [Fact]
+        public async Task Go_WithAnOutputDirUnderAFile_SaysWhy_AndDoesNotStart()
+        {
+            using var scope = new UiTestScope(_gtk);
+            scope.ExpectErrors();
+            if (!FfmpegProbe.IsAvailable)
+                return; // Go is disabled without ffmpeg; nothing to validate
+
+            string file = Path.Combine(scope.TempDir, "a file");
+            File.WriteAllText(file, "");
+            string outputDir = Path.Combine(file, "out");
+            var win = await scope.OpenMainWindowAsync();
+            scope.Msgs.Clear();
+
+            string before = "";
+            await _gtk.RunOnGtkAsync(async () =>
+            {
+                win._txtSubs1.SetText(Path.Combine(scope.TempDir, "nonexistent.srt"));
+                win._txtOutputDir.SetText(outputDir);
+                win._txtDeckName.SetText("Deck");
+                before = win._progressBar.GetText() ?? "";
+                await win.GoAsync();
+            });
+
+            var ui = _gtk.RunOnGtk(() => (Go: win._btnGo.GetSensitive(), Text: win._progressBar.GetText() ?? ""));
+            await scope.CloseAsync(win); // first: a failed assertion would read as a leaked window
+
+            var errors = scope.Msgs.Errors;
+            Assert.Single(errors);
+            Assert.StartsWith($"Cannot write to output directory \"{outputDir}\": ", errors[0]);
+            Assert.True(ui.Go, "Go stays enabled");
+            Assert.Equal(before, ui.Text);
+        }
     }
 }

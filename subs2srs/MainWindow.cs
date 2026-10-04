@@ -1334,24 +1334,34 @@ namespace subs2srs
             SaveSettings();
             ConstantSettings.UpdateAudioFilenameFormats();
 
-            bool needsAudioFromVideo =
-                (Settings.Instance.AudioClips.Enabled
-                    && Settings.Instance.AudioClips.UseAudioFromVideo)
-                || Settings.Instance.VideoClips.Enabled;
-
-            if (needsAudioFromVideo
-                && Settings.Instance.VideoClips.Files?.Length > 1)
+            // The checks subs2srs-cli runs too: every error in one message, then each warning
+            // asked. The audio-stream check probes every video, so they run off the GTK thread.
+            int streamIdx = (int)_comboAudioStream.GetSelected();
+            if (streamIdx < 0) streamIdx = 0;
+            // Without the Preview's lines the run parses the subtitles itself (no CombinedAll).
+            bool aiGroupingRuns = WorkerSubs.aiGroupingOnGoApplies(
+                previewVars ?? new WorkerVars(null!, "", WorkerVars.SubsProcessingType.Normal));
+            Settings settings = Settings.Instance;
+            List<GoProblem> problems;
+            _btnGo.SetSensitive(false); // no second Go while they run
+            try
             {
-                int streamIdx = (int)_comboAudioStream.GetSelected();
-                if (streamIdx < 0) streamIdx = 0;
-                var files = Settings.Instance.VideoClips.Files;
-                string warning = await Task.Run(() =>
-                    UtilsVideo.validateAudioStreamConsistency(files, streamIdx));
-                if (warning != null)
-                {
-                    if (!UtilsMsg.showConfirm(warning))
-                        return;
-                }
+                problems = await Task.Run(() => GoChecks.Run(settings, streamIdx, aiGroupingRuns));
+            }
+            finally
+            {
+                _btnGo.SetSensitive(true);
+            }
+            List<GoProblem> errors = problems.FindAll(p => p.IsError);
+            if (errors.Count > 0)
+            {
+                UtilsMsg.showErrMsg(string.Join("\n\n", errors.ConvertAll(p => p.Message)));
+                return;
+            }
+            foreach (GoProblem warning in problems)
+            {
+                if (!UtilsMsg.showConfirm(warning.Message))
+                    return;
             }
 
             _btnGo.SetSensitive(false);

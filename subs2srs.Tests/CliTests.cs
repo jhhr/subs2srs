@@ -12,8 +12,9 @@ namespace subs2srs.Tests
 {
   /// <summary>
   /// subs2srs-cli through <see cref="CliRunner.RunAsync"/> in-process, and once as the built
-  /// console. In this phase <c>go</c> resolves and prints the episode list (<c>--dry-run</c>)
-  /// and refuses to run. <see cref="EpisodeListTests"/> covers the list itself.
+  /// console. In this phase <c>go</c> resolves and prints the episode list and runs the checks
+  /// before starting (<c>--dry-run</c>), and refuses to run. <see cref="EpisodeListTests"/>
+  /// covers the list itself, <see cref="GoChecksTests"/> the checks.
   /// </summary>
   public class CliTests
   {
@@ -42,6 +43,20 @@ namespace subs2srs.Tests
       ProjectIO.Save(path, s);
       Settings.Instance.Reset();
       return path;
+    }
+
+    /// <summary>
+    /// The checks before starting need ffmpeg; these tests are about the list, so an empty file
+    /// named ffmpeg in the Tools Directory stands in for it on a machine without one. A dry run
+    /// starts it only in the audio-stream check, which then finds no stream. Returns the folder.
+    /// </summary>
+    private static string FakeFfmpeg(TestScope scope)
+    {
+      string tools = Path.Combine(scope.TempDir, "tools");
+      Directory.CreateDirectory(tools);
+      File.WriteAllText(Path.Combine(tools, "ffmpeg"), "");
+      ConstantSettings.ToolsDir = tools;
+      return tools;
     }
 
     /// <summary>A season folder (a space, brackets and Japanese in its name) holding these empty files.</summary>
@@ -117,6 +132,7 @@ namespace subs2srs.Tests
     public async Task DryRun_Season_WithAMissingJapaneseFile_Exits3_AndTheOthersKeepTheirNumbers()
     {
       using var scope = new TestScope(" ä 日本");
+      FakeFfmpeg(scope);
       string project = SaveProject(scope, s => s.EpisodeStartNumber = 1);
       string season = MakeSeason(scope, SeasonMissingJp);
 
@@ -140,6 +156,7 @@ namespace subs2srs.Tests
     public async Task DryRun_Season_EveryEpisodeReady_Exits0_NumberedFromTheProjectsStart_AndCutAtItsEnd()
     {
       using var scope = new TestScope();
+      FakeFfmpeg(scope);
       string project = SaveProject(scope, s => { s.EpisodeStartNumber = 7; s.EpisodeEndNumber = 8; });
       string season = MakeSeason(scope,
         "a.mkv", "b.mkv", "c.mkv",
@@ -156,6 +173,7 @@ namespace subs2srs.Tests
     public async Task DryRun_Patterns_UseTheProjectsPatterns_AsGoDoes()
     {
       using var scope = new TestScope(" ä 日本");
+      FakeFfmpeg(scope);
       var set = PatternSet.Create(scope.TempDir);
       string project = SaveProject(scope, s =>
       {
@@ -213,6 +231,77 @@ namespace subs2srs.Tests
       Assert.Empty(Directory.GetFileSystemEntries(scope.OutputDir));
     }
 
+    /// <summary>
+    /// The checks run after the list: each error on stderr under the table, exit 1. Snippets
+    /// grouped by AI through <c>claude</c> need it whatever the AI Grouping On Go preference says
+    /// (off here): the command line's pre-pass always asks the model.
+    /// </summary>
+    [Fact]
+    public async Task DryRun_WithFailedChecks_ListsThemUnderTheTable_AndExits1()
+    {
+      using var scope = new TestScope();
+      FakeFfmpeg(scope);
+      string file = Path.Combine(scope.TempDir, "a file");
+      File.WriteAllText(file, "");
+      string outputDir = Path.Combine(file, "out");
+      string project = SaveProject(scope, s =>
+      {
+        s.OutputDir = outputDir;
+        s.DeckName = "";
+        s.Snippets.Mode = SnippetMode.AI;
+        s.Snippets.AiModel = "terminal-claude-sonnet-5";
+      });
+      string season = MakeSeason(scope, SeasonMissingJp);
+
+      Result r;
+      try
+      {
+        ClaudeCliProvider.ExecutableOverride = "";
+        r = await Run("go", "--project", project, "--season", season, "--dry-run", "--no-prefs");
+      }
+      finally
+      {
+        ClaudeCliProvider.ExecutableOverride = null;
+      }
+
+      Assert.True(r.Code == CliOptions.ExitError, r.ToString());
+      Assert.Equal(4, r.Lines.Length); // the table all the same
+      string[] errors = r.Stderr.Split(Environment.NewLine).Where(l => l.StartsWith("error: ", StringComparison.Ordinal)).ToArray();
+      Assert.Equal(3, errors.Length);
+      Assert.StartsWith($"error: Cannot write to output directory \"{outputDir}\": ", errors[0]);
+      Assert.Equal("error: Please provide Deck Name.", errors[1]);
+      Assert.Equal("error: Snippets are grouped by AI with terminal-claude-sonnet-5. " + ClaudeCliProvider.NoCliMessage, errors[2]);
+      Assert.Contains("2 ready, 1 skipped. Dry run: nothing was made.", r.Stderr);
+    }
+
+    /// <summary>
+    /// A warning is listed with what go would do at it, which <c>--yes</c> decides; the exit code
+    /// stays the list's. Stream #1 is missing from both videos (the test video has one).
+    /// </summary>
+    [RequiresFfmpegFact]
+    public async Task DryRun_WithAnAudioStreamWarning_SaysWhatGoWouldDo_AndKeepsTheListsExitCode()
+    {
+      await TestMedia.EnsureAsync();
+      using var scope = new TestScope();
+      string project = SaveProject(scope, s => s.VideoClips.AudioStream = new InfoStream("0:2", "1", "", ""));
+      string season = MakeSeason(scope, "s2s/a.ja.srt", "s2s/a.en.srt", "s2s/b.ja.srt", "s2s/b.en.srt");
+      File.Copy(TestMedia.VideoPath, Path.Combine(season, "a.mkv"));
+      File.Copy(TestMedia.VideoPath, Path.Combine(season, "b.mkv"));
+
+      Result no = await Run("go", "--project", project, "--season", season, "--dry-run", "--no-prefs");
+      Assert.True(no.Code == CliOptions.ExitOk, no.ToString());
+      string[] lines = no.Stderr.Split(Environment.NewLine);
+      Assert.Contains("warning: Audio stream #1 issues:", lines);
+      Assert.Contains("  Stream not found in episodes: 1, 2", lines);
+      Assert.Contains("  Continue anyway?", lines);
+      Assert.Contains("Without --yes, go answers no to the warning and stops; with --yes it goes on.", lines);
+      Assert.DoesNotContain(lines, l => l.StartsWith("error: ", StringComparison.Ordinal));
+
+      Result yes = await Run("go", "--project", project, "--season", season, "--dry-run", "--no-prefs", "--yes");
+      Assert.True(yes.Code == CliOptions.ExitOk, yes.ToString());
+      Assert.Contains("With --yes, go answers yes to the warning and goes on.", yes.Stderr.Split(Environment.NewLine));
+    }
+
     [Fact]
     public async Task MissingProject_BadProject_MissingSeason_OrAudioFromFiles_Exit1()
     {
@@ -247,6 +336,7 @@ namespace subs2srs.Tests
     public async Task Preferences_AreRead_FromAnyFileName_AndNeverWritten()
     {
       using var scope = new TestScope();
+      FakeFfmpeg(scope);
       string project = SaveProject(scope);
       string season = MakeSeason(scope, SeasonMissingJp);
 
@@ -303,6 +393,7 @@ namespace subs2srs.Tests
         WorkingDirectory = scope.TempDir,
       };
       psi.Environment["LC_ALL"] = "en_US.ISO-8859-1";
+      psi.Environment["PATH"] = FakeFfmpeg(scope) + Path.PathSeparator + Environment.GetEnvironmentVariable("PATH");
       foreach (string a in new[] { dll, "go", "--project", project, "--season", season, "--dry-run", "--no-prefs" })
         psi.ArgumentList.Add(a);
       using Process process = Process.Start(psi)!;
