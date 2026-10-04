@@ -54,7 +54,9 @@ namespace subs2srs.Cli
         // answer to a question is decided here. The error and info hooks stay unset.
         UtilsMsg.OnShowConfirm = (_, _) => options.Yes;
 
-        return await GoAsync(options, stdout, stderr, token);
+        return options.Command == CliOptions.SeasonCommand
+          ? await SeasonCommand.RunAsync(options, stdout, stderr, token)
+          : await GoAsync(options, stdout, stderr, token);
       }
       catch (CliException ex)
       {
@@ -355,7 +357,7 @@ namespace subs2srs.Cli
           : "Without --yes, go answers no to the warning and stops; with --yes it goes on.");
     }
 
-    private static void LoadProject(string path)
+    internal static void LoadProject(string path)
     {
       if (!File.Exists(path)) throw new CliException("project file not found: " + path);
       try

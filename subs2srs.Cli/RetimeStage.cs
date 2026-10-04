@@ -187,7 +187,7 @@ namespace subs2srs.Cli
         ? ConstantSettings.SubsRetimerExe : exe;
 
     /// <summary>How the file system compares names: two names that differ in case are one file on Windows.</summary>
-    private static StringComparison PathComparison =>
+    internal static StringComparison PathComparison =>
       OperatingSystem.IsWindows() ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal;
 
     /// <summary>
@@ -226,7 +226,7 @@ namespace subs2srs.Cli
       string enFile = Path.GetFullPath(en.Path);
       string output = OutputPath(dir, video, jpFile);
       string report = ReportPath(dir, video);
-      if (!options.Force && IsNewerThanBoth(output, enFile, jpFile))
+      if (WouldKeep(dir, video, jpFile, enFile, options.Force))
       {
         string? error = Delete(retimes.Where(r => !string.Equals(r, output, PathComparison)));
         return error != null ? Failed(error) : new RetimeOutcome(RetimeKind.Kept, output);
@@ -273,17 +273,21 @@ namespace subs2srs.Cli
 
     private static RetimeOutcome Failed(string reason) => new(RetimeKind.Failed, Reason: reason);
 
-    /// <summary>An output that is there, not empty, and written after both its files.</summary>
-    private static bool IsNewerThanBoth(string output, string enFile, string jpFile)
+    /// <summary>
+    /// Whether <see cref="RetimeAsync"/> would keep the episode's retime as it is: not forced, and
+    /// the output there, not empty, and written after both its files. Reads only; a dry run asks it.
+    /// </summary>
+    internal static bool WouldKeep(string seasonDir, string video, string jpFile, string enFile, bool force)
     {
-      var info = new FileInfo(output);
+      if (force) return false;
+      var info = new FileInfo(OutputPath(Path.GetFullPath(seasonDir), video, jpFile));
       if (info is not { Exists: true, Length: > 0 } || !File.Exists(enFile) || !File.Exists(jpFile)) return false;
       DateTime written = info.LastWriteTimeUtc;
       return written > File.GetLastWriteTimeUtc(enFile) && written > File.GetLastWriteTimeUtc(jpFile);
     }
 
     /// <summary>Deletes the files that are there; the first failure's message, else null.</summary>
-    private static string? Delete(IEnumerable<string> paths)
+    internal static string? Delete(IEnumerable<string> paths)
     {
       foreach (string path in paths)
       {

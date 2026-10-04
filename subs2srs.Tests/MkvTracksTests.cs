@@ -343,6 +343,24 @@ namespace subs2srs.Tests
     }
 
     [Fact]
+    public async Task PickAsync_AFileInAnotherContainer_HasNoTrackToExtract()
+    {
+      FakeMkvMerge();
+      Assert.Equal("Matroska", MkvTracks.Parse(Fixture("multi-tracks.json")).ContainerType);
+      // mkvmerge lists an MP4 named .mkv, text tracks and all; mkvextract then fails ("no EBML head found").
+      string mp4 = Fixture("multi-tracks.json").Replace("\"type\": \"Matroska\"", "\"type\": \"QuickTime/MP4\"");
+      Assert.Equal("QuickTime/MP4", MkvTracks.Parse(mp4).ContainerType);
+      Script(0, mp4);
+
+      MkvTrackPick pick = await MkvTracks.PickAsync("show.mkv");
+
+      Assert.Null(pick.Track);
+      Assert.Equal("not a Matroska file (QuickTime/MP4): mkvextract extracts only from Matroska", pick.Reason);
+      Script(0, Fixture("multi-tracks.json"));
+      Assert.NotNull((await MkvTracks.PickAsync("show.mkv")).Track);
+    }
+
+    [Fact]
     public async Task ListAsync_ExitCode1_IsWarnings_TheTracksAreRead()
     {
       FakeMkvMerge();

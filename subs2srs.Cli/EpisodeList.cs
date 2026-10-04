@@ -74,14 +74,24 @@ namespace subs2srs.Cli
         throw new CliException("--season takes the audio clips from each video, but the project takes them from audio files "
           + "(Audio tab: use existing audio). Choose audio from the video in the GUI and save the project, or run without --season.");
       string dir = Path.GetFullPath(seasonDir);
-      if (!Directory.Exists(dir)) throw new CliException("season folder not found: " + seasonDir);
-
-      // The GUI's own listing, so the order, and with it every episode number, is the one Go gives.
-      string[] videos = UtilsCommon.getNonHiddenFiles(Path.Combine(dir, "*.mkv"));
-      if (videos.Length == 0) throw new CliException("no .mkv file in the season folder " + dir);
+      string[] videos = SeasonVideos(seasonDir);
       string[] subsNames = UtilsCommon.getNonHiddenFilesInDir(Path.Combine(dir, SubsFolder))
         .Select(f => Path.GetFileName(f)).ToArray();
       return ForSeason(dir, videos, subsNames, settings.EpisodeStartNumber, settings.EpisodeEndNumber);
+    }
+
+    /// <summary>
+    /// Every video of a season folder (<c>*.mkv</c>), full paths, in episode order. Throws
+    /// <see cref="CliException"/> for a missing folder or a folder without videos.
+    /// </summary>
+    public static string[] SeasonVideos(string seasonDir)
+    {
+      string dir = Path.GetFullPath(seasonDir);
+      if (!Directory.Exists(dir)) throw new CliException("season folder not found: " + seasonDir);
+      // The GUI's own listing, so the order, and with it every episode number, is the one Go gives.
+      string[] videos = UtilsCommon.getNonHiddenFiles(Path.Combine(dir, "*.mkv"));
+      if (videos.Length == 0) throw new CliException("no .mkv file in the season folder " + dir);
+      return videos;
     }
 
     /// <summary>

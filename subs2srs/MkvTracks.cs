@@ -82,6 +82,8 @@ namespace subs2srs
     public IReadOnlyList<MkvTrackInfo> Tracks { get; init; } = Array.Empty<MkvTrackInfo>();
     /// <summary>Null when mkvmerge listed the file; otherwise one line for the user.</summary>
     public string? Error { get; init; }
+    /// <summary>mkvmerge's name for the container, <c>Matroska</c> for an mkv; "" when it does not say.</summary>
+    public string ContainerType { get; init; } = "";
 
     public static MkvTrackList Failed(string error) => new MkvTrackList { Error = error };
   }
@@ -117,6 +119,8 @@ namespace subs2srs
     public const string NoSubtitleTrack = "no subtitle track";
     public const string OnlyImageTracks = "only image subtitle tracks (PGS/VobSub), which need OCR";
     public const string NoEnglishTextTrack = "no English text subtitle track";
+    /// <summary>The one container mkvextract extracts from; mkvmerge also lists MP4, AVI and others.</summary>
+    public const string Matroska = "Matroska";
 
     // ── Parsing ──────────────────────────────────────────────────────────
 
@@ -142,6 +146,7 @@ namespace subs2srs
           && (Bool(container, "recognized") == false || Bool(container, "supported") == false))
           return MkvTrackList.Failed("mkvmerge cannot read this file (format not recognised or not supported)");
 
+        string containerType = Str(container, "type"); // "" without a container object
         var tracks = new List<MkvTrackInfo>();
         if (root.TryGetProperty("tracks", out JsonElement list) && list.ValueKind == JsonValueKind.Array)
         {
@@ -167,7 +172,7 @@ namespace subs2srs
             });
           }
         }
-        return new MkvTrackList { Tracks = tracks };
+        return new MkvTrackList { Tracks = tracks, ContainerType = containerType };
       }
       catch (JsonException)
       {
@@ -318,11 +323,18 @@ namespace subs2srs
       return Parse(result.Stdout);
     }
 
-    /// <summary><see cref="ListAsync"/>, then <see cref="Pick"/>; a listing error is the reason.</summary>
+    /// <summary>
+    /// <see cref="ListAsync"/>, then <see cref="Pick"/>; a listing error is the reason. A file
+    /// mkvmerge reads as another container (an MP4 named <c>.mkv</c>) has no track to extract.
+    /// </summary>
     public static async Task<MkvTrackPick> PickAsync(string mkvFile, int? trackId = null, CancellationToken ct = default)
     {
       MkvTrackList list = await ListAsync(mkvFile, ct).ConfigureAwait(false);
-      return list.Error != null ? MkvTrackPick.None(list.Error) : Pick(list.Tracks, trackId);
+      if (list.Error != null)
+        return MkvTrackPick.None(list.Error);
+      if (list.ContainerType.Length > 0 && list.ContainerType != Matroska)
+        return MkvTrackPick.None("not a Matroska file (" + list.ContainerType + "): mkvextract extracts only from Matroska");
+      return Pick(list.Tracks, trackId);
     }
 
     /// <summary>
