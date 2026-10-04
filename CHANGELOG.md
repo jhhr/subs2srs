@@ -4,6 +4,8 @@
 
 **Command line** (`subs2srs-cli`, new; see the README):
 - `subs2srs-cli go --project show.s2s.json --season <dir>` makes the cards of a whole season without the GUI, with the settings of a project saved in the GUI: one run over every episode, one import file, and a table on stdout of what became of each episode. The season folder holds the `*.mkv` files and, in `s2s/`, each video's `<video name>.ja.<ext>` (Subs1) and `<video name>.en.<ext>` (Subs2). An episode without exactly one of each is skipped, and the others keep their episode numbers in tags, sequence markers and every media name, padded as a run over the whole season pads them, so names do not change between runs. Without `--season` the project's own patterns are used, and unequal file counts are refused. `--dry-run` lists the episodes and the checks before starting and makes nothing.
+- `subs2srs-cli season <dir> --project show.s2s.json` does the whole season from the videos and one Japanese subtitle file per video, named like it (`Show - 01.srt`, `Show - 01.ja.srt`). For each episode it picks the English text track with `mkvmerge -J` (English, ASS, SSA or SRT, not forced, the most events; `--track ID` takes one track from every video), extracts it with `mkvextract` to `s2s/<video name>.en.<ext>`, and retimes the Japanese file to it with subsretimer (`--auto`, the project's Subs1 encoding, `--min-match F` when given) into `s2s/<video name>.ja.<ext>`; then, in the same run, it makes the cards of the episodes with a retime as `go --season` does, the others skipped under their own numbers. One table: Episode, EN track, Retime (`2 segments, 97% of EN covered`, `below --min-match (66%)`, `no JP file named like the video`, …), AI, Status, Cards, with a note when the picked track differs between episodes. For each pair subsretimer did not save, the table is followed by the command that opens subsretimer's editor on that pair; its Save writes the file the next run keeps. A re-run keeps the extracted files and every retime newer than both its files (an editor fix included) and does the rest; `--force` does everything again. `--only extract|retime|go` runs one stage; `--dry-run` shows the track, the JP file and what would be kept or done, and changes nothing. The EN files are read as UTF-8, as mkvextract writes them.
+- `--deck NAME` (`go` and `season`) makes the cards under another deck name than the project's: the import file, the media folder, the media names and the tags.
 - Exit codes: `0` every episode done, `3` some skipped (the table says why), `1` an error before any work or a failed step (whose partly written TSV is deleted), `130` cancelled.
 - With snippet mode AI, the model groups every episode first, as in the Preview, with cached answers reused. An episode it cannot group is skipped rather than grouped by the rules. Once the Claude usage limit is reached, the remaining episodes without a cached answer are skipped without asking, so the same command run after the limit resets fills the gaps. `--grouping rules|off` runs without the model.
 - Reads the GUI's `preferences.json` and never writes it (`--prefs FILE`, `--no-prefs`). Progress and messages go to stderr; redirected output is UTF-8.
@@ -47,7 +49,8 @@
 
 **Windows support**:
 - subs2srs now runs on Windows 10/11. Releases attach a self-contained portable zip (`subs2srs-<ver>-win-x64.zip`) with .NET and the GTK 4 runtime bundled from MSYS2 UCRT64 (`dist/windows/bundle-gtk.ps1`, `.github/workflows/release.yml`). ffmpeg is not bundled.
-- New preference **Tools Directory** (Misc): a folder searched before `PATH` for ffmpeg, ffprobe, ffplay, mkvinfo, mkvextract and mp3gain. Tool lookup is `PATHEXT`-aware and no longer mutates the process `PATH`.
+- New preference **Tools Directory** (Misc): a folder searched before `PATH` for ffmpeg, ffprobe, ffplay, mkvinfo, mkvextract, mkvmerge and mp3gain. Tool lookup is `PATHEXT`-aware and no longer mutates the process `PATH`.
+- mkvmerge, mkvextract and mkvinfo are also found in `%ProgramFiles%\MKVToolNix` (and `%ProgramFiles(x86)%\MKVToolNix`), where the MKVToolNix installer puts them without adding them to `PATH`. This also fixes the MKV dialogs, which did not find them there.
 - Startup check: if ffmpeg cannot be found, one clear message with install instructions is shown and Go is disabled.
 - All GTK P/Invokes in `GtkColumnViewHelper` replaced with managed gir.core calls (the `"gtk-4"` library name only resolved on Linux).
 - External tools are launched with UTF-8 output decoding, `-nostdin` for ffmpeg, and never through the shell, so non-ASCII paths work and no console windows flash.
@@ -57,6 +60,7 @@
 **Subs Re-Timer** (Tools tab):
 - New entry that launches the external [subsretimer](https://github.com/jhhr/subsretimer) tool with the main window's Subs1/Subs2 files, lets you choose which file is the reference and whether to auto-align headlessly, and offers to use the re-timed file in the main window afterwards. The button is disabled with a hint when `subsretimer` is not on `PATH` or in the *Tools Directory*.
 - Preferences `SubsRetimerReferenceIsSubs2` and `SubsRetimerAuto` remember the launcher's last choices. The unused `PathSubsReTimerFull` constant from the Mono port is replaced by `PathSubsRetimerExeFull`.
+- Closing the window stops a running auto-align; an open editor is left running, so no unsaved work there is lost. The tool's output is read as UTF-8, so a saved path with Japanese characters comes back intact on Windows.
 
 **Bug fixes**:
 - Choosing a legacy subtitle encoding (Shift-JIS, GBK, EUC-KR, Windows-125x, …) threw `ArgumentException`; the code-page encoding provider is now registered.
@@ -69,9 +73,10 @@
 - New card-generation end-to-end tests in `subs2srs.Tests` (`SubsProcessorE2ETests`) that run the real pipeline against generated media; skipped when ffmpeg is absent.
 - New `subs2srs.UiTests` project: opens every window, drives the main window through a full deck generation and the Preferences dialog through OK/Cancel. Runs on Windows and under Xvfb on Linux in CI.
 - `subs2srs-cli` is tested in-process (`CliTests`, `CliAiPrePassTests`, `EpisodeListTests`), with the shared file resolution and checks (`ProjectFilesTests`, `GoChecksTests`) and explicit episode numbers through the e2e pipeline.
+- `season` is tested on generated mkv files with the real mkvmerge and mkvextract and a scripted subsretimer (`CliSeasonTests`, `MkvTracksTests`, `MkvExtractTests`, `RetimeStageTests`, `SubsRetimerLauncherTests`); those tests skip without MKVToolNix. The tests of the real subsretimer run only with `SUBSRETIMER_EXE` set, and are now reported as skipped otherwise.
 
 **Build/CI**:
-- CI now runs on Linux (Xvfb) and Windows (MSYS2 GTK); NuGet lock files added.
+- CI now runs on Linux (Xvfb) and Windows (MSYS2 GTK); NuGet lock files added. Both jobs install MKVToolNix.
 - `make test-ui`, `make publish-windows`; `depends` lists mp3gain/mkvtoolnix as optional.
 - `make build`, `make install` and `make publish-windows` build `subs2srs-cli` with the app; `smoke.ps1` also runs `subs2srs-cli.exe --version` and `go --help`. `release.yml` can be started by hand: it then builds and smoke-tests the zip as version `0.0.0-dev` and attaches it to no release (only a `v*` tag does). Its publish step now stops at the first failing command.
 

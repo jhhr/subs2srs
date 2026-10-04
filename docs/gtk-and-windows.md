@@ -66,7 +66,8 @@ same GirCore packages, loads the assemblies and prints method signatures, tolera
   licensing); `MainWindow.CheckExternalTools()` disables Go with an install hint when it is missing.
   `subsretimer` is optional and resolved the same way; the Tools-tab button is disabled with a hint
   when it is absent. The tool has a Windows build now, but subs2srs has not launched it on Windows
-  yet.
+  yet. MKVToolNix's tools are also looked for in `%ProgramFiles%\MKVToolNix`, which its installer
+  does not add to PATH.
 - Build paths with `Path.Combine`; several Windows bugs were hard-coded `/` temp paths.
 - The app writes **no log at startup** unless something fails; "a log file exists" is not a liveness
   signal.
@@ -113,13 +114,16 @@ release on `v*` tags). About 144 MB unzipped.
 
 ## CI (`.github/workflows/ci.yml`)
 
-Two jobs, Linux (apt GTK + Xvfb + ffmpeg) and Windows (MSYS2 GTK + Chocolatey ffmpeg); both build
-Release and run both test projects, uploading `.trx` results and UI screenshots.
+Two jobs, Linux (apt GTK + Xvfb + ffmpeg + MKVToolNix) and Windows (MSYS2 GTK + Chocolatey ffmpeg and
+MKVToolNix, the latter into `Program Files\MKVToolNix` and not on PATH, so the install-folder lookup is
+what finds it); both build Release and run both test projects, uploading `.trx` results and UI
+screenshots. The real-subsretimer tests skip there (`SUBSRETIMER_EXE` is not set).
 
 - There is no solution file: each project is restored explicitly with `--locked-mode`. A new project or
   package that is not in a `packages.lock.json` / not listed in the workflow fails CI at restore.
-- The workflow only triggers on changes under the project folders, `dist/`, `Makefile` and the workflow
-  itself; a docs-only push runs nothing.
+- The workflow triggers on pull requests, on pushes to the branch its `push` filter names (see
+  [open-items.md](open-items.md)) and by hand, and only for changes under the project folders,
+  `dist/`, `Makefile` and the workflow itself; a docs-only change runs nothing.
 - `msys2/setup-msys2` treats `location` as a *parent* directory; the job uses `release: false` (the
   runner's preinstalled MSYS2) and derives paths from `MSYS2_LOCATION`. CI sets `XDG_DATA_DIRS` and
   `GSETTINGS_SCHEMA_DIR` for the UI tests; a local MSYS2 development run has not needed them.
@@ -133,7 +137,7 @@ Release and run both test projects, uploading `.trx` results and UI screenshots.
   package database shows up as mirror 404s: `pacman -Syu` (needs `y` on stdin), and remove a leftover
   `var/lib/pacman/db.lck` if it refuses to start.
 - ffmpeg on PATH (e.g. `winget install Gyan.FFmpeg` or Chocolatey). mkvtoolnix and mp3gain are optional;
-  nothing in the test suites needs them.
+  without MKVToolNix its tests skip.
 - Run the app: GTK on PATH, then `dotnet run --project subs2srs`.
 
 Not verified anywhere yet: column drag-resize on Linux after the managed `ColumnViewColumn` rewrite, and

@@ -24,7 +24,7 @@ the `claude` CLI), a grouping **evaluation console**, and a Tools-tab launcher f
 | `subs2srs.Tests/` | xUnit unit + card-generation e2e tests (real ffmpeg, no GTK, no network). `Harness/` holds the shared fixtures |
 | `subs2srs.UiTests/` | xUnit GTK tests: one GTK thread fixture, real windows, optional screenshots |
 | `subs2srs.Eval/` | Console that scores groupings against labelled validation files. The only place allowed to call a real AI provider outside the app and `subs2srs-cli` |
-| `subs2srs.Cli/` | `subs2srs-cli go`: card generation from a project saved in the GUI, a whole season in one run, without GTK. Console exe referencing the app; the GTK-free code it shares with the GUI (`ProjectFiles`, `GoChecks`, `PipelineResult`) lives in `subs2srs/`. See [docs/architecture.md](docs/architecture.md) |
+| `subs2srs.Cli/` | `subs2srs-cli go` and `season`: card generation from a project saved in the GUI, a whole season in one run, without GTK; `season` first extracts the EN tracks (MKVToolNix) and retimes the JP files (subsretimer). Console exe referencing the app; the GTK-free code it shares with the GUI (`ProjectFiles`, `GoChecks`, `PipelineResult`, `SubsRetimerLauncher`) lives in `subs2srs/`, as do `MkvTracks` and `MkvExtract`. See [docs/architecture.md](docs/architecture.md) |
 | `dist/windows/` | `bundle-gtk.ps1` (MSYS2 GTK → publish dir), `smoke.ps1` |
 | `docs/` | Agent/developer docs, see the index below |
 | `tests.md` | One row per test file. `CHANGELOG.md` = user-visible changes |
@@ -40,6 +40,7 @@ dotnet test subs2srs.Tests/subs2srs.Tests.csproj --filter "FullyQualifiedName~Sn
 GSK_RENDERER=cairo dotnet test subs2srs.UiTests/subs2srs.UiTests.csproj # GTK tests, needs GTK 4 + a display
 dotnet run --project subs2srs.Eval -- --set <dir> --rules              # eval console (make eval ARGS=...)
 dotnet run --project subs2srs.Cli -- go --project <file> --dry-run     # subs2srs-cli; --season <dir> for a season
+dotnet run --project subs2srs.Cli -- season <dir> --project <file> --dry-run
 ```
 
 - **Windows**: GTK comes from MSYS2 UCRT64. Before running the app or the UI tests, put it on PATH:

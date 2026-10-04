@@ -28,11 +28,15 @@ decision in the topic doc.
   switch penalty (2.5 lines of overlap) and the 28 s gap threshold inherited from the original tool are
   untested defaults. Run `subsretimer --auto EN.srt JP.ass` on a real episode and read the segment
   summary on stderr. The launcher has never been run on Windows.
-- **`subs2srs-cli go` has not made a real season on Windows.** Its tests run on the Windows CI job
-  in-process, on generated media and a fake model, and the bundled `subs2srs-cli.exe` has passed the
-  smoke test; no real season (real mkv files, retimed JP files, `claude` grouping) has been through it.
-  The user's first step is one real episode by hand (phase 0 of the season-batch plan in the
-  subsretimer repository).
+- **`subs2srs-cli go` and `season` have not made a real season on Windows.** Their tests run on the
+  Windows CI job in-process, on generated media (mkv files muxed there by the real MKVToolNix), a
+  scripted subsretimer and a fake model, and the bundled `subs2srs-cli.exe` has passed the smoke
+  test; `season` has run by hand on generated seasons on Linux only. No real season (real mkv files,
+  real JP files, the real subsretimer on Windows, `claude` grouping) has been through either. The
+  Windows-only paths of `season` (the PowerShell quoting of the editor command, names compared
+  ignoring case, `%ProgramFiles%\MKVToolNix`) are checked by CI's tests, never by hand. The user's
+  first step is one real episode by hand (phase 0 of the season-batch plan in the subsretimer
+  repository), which is also to set `--min-match`: it has no default.
 
 ## Small known faults
 
@@ -53,6 +57,17 @@ decision in the topic doc.
   be `SpecialFolderOption.DoNotVerify`.
 - **Every `subs2srs-cli` run leaves an empty `log-*.txt`** in the log folder: `CliRunner.RunAsync`
   touches `Logger.Instance`, whose constructor creates the file, before it turns file logging off.
+  The folder keeps only the newest 10 logs, so ten command-line runs push out every log of the GUI.
+- **`season` runs `go`'s checks only after extracting and retiming**: a missing deck name, ffmpeg or
+  `claude` is reported after that work (which is kept for the next run). Checking up front what does
+  not depend on the episodes (all but the audio streams) would be friendlier.
+- **`season` keeps by name and file time.** A retime is kept when it was written after both its EN
+  and JP files, so a JP file replaced by a copy that kept an older time (Explorer keeps it) leaves the
+  old retime in place. An extraction is kept when its file exists, so after a changed `--track` whose
+  track has the same format the old track stays. `--force` redoes both; the help text says so.
+- **CI's `push` trigger names the branch `default`** (`branches: [default]` in `ci.yml`), which matches
+  only a branch of that name, not the default branch `main`; pushes run nothing and only pull
+  requests and manual runs are checked. `branches: [main]` would do what the commit says.
 - **`subs2srs-cli.exe` has no `app.manifest`**, unlike `subs2srs.exe` (whose manifest sets long paths
   and the UTF-8 code page). Whether a long path breaks it on Windows is untested. It has no icon
   either; when `assets/subs2srs.ico` lands (deferred below), only the app's csproj picks it up.
@@ -96,14 +111,15 @@ No labelled data existed when these were chosen. The eval console exists to sett
   1. Wildcard patterns in Subs1/Subs2 are refused by the dialog. The planned batch mode resolves both
      patterns with `UtilsSubs.getSubsFiles`, pairs by index, runs `--auto` per pair behind a progress
      bar and offers to rewrite the pattern to the `_retimed` files.
-  2. Small code follow-ups from the docs review: `SubsRetimerLauncher.RunAsync` builds its own
-     `ProcessStartInfo` instead of `UtilsCommon.makeToolStartInfo`, so its pipes are not forced to
-     UTF-8 (a non-ASCII saved path on Windows would come back garbled); the two `SubsRetimer*`
-     preferences are not in `DialogPref` or `Logger.writeSettingsToLog` (the "five places" rule);
-     the env-gated `RealTool_*` tests should use `[RequiresEnvFact("SUBSRETIMER_EXE")]`; and
-     `DialogSubsRetimer` has no `subs2srs.UiTests` coverage (it was verified once by a throwaway
-     Xvfb harness: auto-align success handing the file back, failure re-enabling Run, wildcard
-     validation).
+  2. Small code follow-ups from the docs review: the two `SubsRetimer*` preferences are not in
+     `DialogPref` or `Logger.writeSettingsToLog` (the "five places" rule); and `DialogSubsRetimer`
+     has no `subs2srs.UiTests` coverage (it was verified once by a throwaway Xvfb harness:
+     auto-align success handing the file back, failure re-enabling Run, wildcard validation).
+- **`season` follow-ups** (the season-batch plan's "later, optional"): `season --fix`, opening the
+  editor on each pair the last run could not retime, one after another, then making those cards; the
+  GUI's Extract dialog on `MkvTracks` (track names and flags, errors not dropped); natural sort in
+  `getNonHiddenFiles`, so `ep2` sorts before `ep10` (it changes the episode order of existing projects
+  with unpadded names: say so in the CHANGELOG).
 
 - **Batch API mode** (half price on all three providers). Deferred until a real run shows the
   per-episode cost. Nothing prepares for it: it means a second request path per adapter and a polling
