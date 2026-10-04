@@ -55,7 +55,7 @@ namespace subs2srs
         private Gtk.DropDown _comboEncodingSubs2;
         private Gtk.StringList _encModel2;
         private Gtk.DropDown _comboAudioStream;
-        private Gtk.StringList _audioStreamModel;
+        internal Gtk.StringList _audioStreamModel;
         private Gtk.CheckButton _radioTimingSubs1;
         private Gtk.CheckButton _radioTimingSubs2;
         private Gtk.CheckButton _chkTimeShift;

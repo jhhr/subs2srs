@@ -95,13 +95,17 @@ namespace subs2srs.UiTests.Tests
 
             await _gtk.RunOnGtkAsync(async () =>
             {
+                var streamsBefore = win._audioStreamModel;
                 win._txtSubs1.SetText(set.Subs1Pattern);
                 win._txtSubs2.SetText(set.Subs2Pattern);
                 win._txtVideo.SetText(set.VideoPattern);
                 win._txtAudioFile.SetText(set.AudioPattern);
                 win._spinEpisodeStart.Value = PatternSet.Start;
                 win._spinEpisodeEnd.Value = PatternSet.End;
-                await Pump.IdleAsync();
+                // A video pattern starts a probe of the first video's audio streams, which
+                // replaces the stream list; let it finish while the window is open.
+                await Pump.WaitUntilAsync(() => !ReferenceEquals(win._audioStreamModel, streamsBefore),
+                    what: "audio stream probe");
                 win.SaveSettings();
             });
 
