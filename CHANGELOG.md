@@ -2,6 +2,18 @@
 
 ## Unreleased
 
+**Command line** (`subs2srs-cli`, new; see the README):
+- `subs2srs-cli go --project show.s2s.json --season <dir>` makes the cards of a whole season without the GUI, with the settings of a project saved in the GUI: one run over every episode, one import file, and a table on stdout of what became of each episode. The season folder holds the `*.mkv` files and, in `s2s/`, each video's `<video name>.ja.<ext>` (Subs1) and `<video name>.en.<ext>` (Subs2). An episode without exactly one of each is skipped, and the others keep their episode numbers in tags, sequence markers and every media name, padded as a run over the whole season pads them, so names do not change between runs. Without `--season` the project's own patterns are used, and unequal file counts are refused. `--dry-run` lists the episodes and the checks before starting and makes nothing.
+- Exit codes: `0` every episode done, `3` some skipped (the table says why), `1` an error before any work or a failed step (whose partly written TSV is deleted), `130` cancelled.
+- With snippet mode AI, the model groups every episode first, as in the Preview, with cached answers reused. An episode it cannot group is skipped rather than grouped by the rules. Once the Claude usage limit is reached, the remaining episodes without a cached answer are skipped without asking, so the same command run after the limit resets fills the gaps. `--grouping rules|off` runs without the model.
+- Reads the GUI's `preferences.json` and never writes it (`--prefs FILE`, `--no-prefs`). Progress and messages go to stderr; redirected output is UTF-8.
+- Installed with the app: `make install` adds `/usr/bin/subs2srs-cli`, and the Windows zip has `subs2srs-cli.exe` next to `subs2srs.exe`.
+- The GUI numbers episodes as before (*Episode Start #* plus the position); only the command line sets explicit numbers.
+
+**Go** (main window):
+- Go runs the checks before starting that `subs2srs-cli` shares, and shows every error in one message: an output directory that cannot be created or written to, ffmpeg not found, no encoder for animated snapshots while they are on, and `claude` not found when AI grouping will run on Go with a `terminal-` model. The audio-stream question is asked as before.
+- Go now refuses when AI grouping would run on Go without `claude`; it used to group every uncached episode by the rules without a word.
+
 **Grouping evaluation** (developers):
 - New console project `subs2srs.Eval` (not shipped; `make eval ARGS="..."` or `dotnet run --project subs2srs.Eval -- --set <dir> [--model <model> | --rules]`) scores a grouper against the validation files written by *Save as validation*: precision, recall and F1 per boundary, exact-match rate per snippet with an over-merged / under-merged breakdown, per file and summed over the tuning set, the hold-out set (files under a `holdout/` folder, or `--holdout <dir>`) and all files, plus tokens and cost. Model runs go through the app's own chunker, prompt, provider layer, answer repair and cache, so a run costs nothing the second time; `--prompt` appends extra instructions for prompt iteration, `--estimate` and `--max-cost` keep spending in check, `--compare <run>` diffs two runs boundary by boundary with the line texts, and the rule knobs (`--rules-gap`, `--rules-cues`, ...) tune the zero-cost baseline. Reports: a table on stdout and `<run>.run.json`, `.csv`, `.md`.
 - A no-network regression test scores the cached answers of a configured model against hold-out fixtures in `subs2srs.Tests/Fixtures/eval/` and skips until they exist (see the README there).
@@ -56,10 +68,12 @@
 **Tests**:
 - New card-generation end-to-end tests in `subs2srs.Tests` (`SubsProcessorE2ETests`) that run the real pipeline against generated media; skipped when ffmpeg is absent.
 - New `subs2srs.UiTests` project: opens every window, drives the main window through a full deck generation and the Preferences dialog through OK/Cancel. Runs on Windows and under Xvfb on Linux in CI.
+- `subs2srs-cli` is tested in-process (`CliTests`, `CliAiPrePassTests`, `EpisodeListTests`), with the shared file resolution and checks (`ProjectFilesTests`, `GoChecksTests`) and explicit episode numbers through the e2e pipeline.
 
 **Build/CI**:
 - CI now runs on Linux (Xvfb) and Windows (MSYS2 GTK); NuGet lock files added.
 - `make test-ui`, `make publish-windows`; `depends` lists mp3gain/mkvtoolnix as optional.
+- `make build`, `make install` and `make publish-windows` build `subs2srs-cli` with the app; `smoke.ps1` also runs `subs2srs-cli.exe --version` and `go --help`. `release.yml` can be started by hand: it then builds and smoke-tests the zip as version `0.0.0-dev` and attaches it to no release (only a `v*` tag does). Its publish step now stops at the first failing command.
 
 ---
 

@@ -65,17 +65,29 @@ same GirCore packages, loads the assemblies and prints method signatures, tolera
 - External tools: see the end of [architecture.md](architecture.md). ffmpeg is never bundled (size,
   licensing); `MainWindow.CheckExternalTools()` disables Go with an install hint when it is missing.
   `subsretimer` is optional and resolved the same way; the Tools-tab button is disabled with a hint
-  when it is absent. Nothing on Windows has run it yet (the tool has no Windows build or `.exe` name
-  convention beyond what `ResolveTool` assumes).
+  when it is absent. The tool has a Windows build now, but subs2srs has not launched it on Windows
+  yet.
 - Build paths with `Path.Combine`; several Windows bugs were hard-coded `/` temp paths.
 - The app writes **no log at startup** unless something fails; "a log file exists" is not a liveness
   signal.
 
 ## Packaging (`make publish-windows`)
 
-`dotnet publish -r win-x64 --self-contained` → `dist/windows/bundle-gtk.ps1` → `dist/windows/smoke.ps1`
-→ zip (in `release.yml`, on `v*` tags, attached to the GitHub release). About 144 MB unzipped.
+`dotnet publish -r win-x64 --self-contained` of the app, then of `subs2srs.Cli`, into the same folder →
+`dist/windows/bundle-gtk.ps1` → `dist/windows/smoke.ps1` → zip (in `release.yml`, attached to the GitHub
+release on `v*` tags). About 144 MB unzipped.
 
+- **Two apphosts in one folder.** The CLI's publish writes the app's files too (`subs2srs.dll`,
+  `subs2srs.exe`, their `.deps.json` and `.runtimeconfig.json`, the shared packages and runtime). Every
+  file both publishes write comes out byte-identical, in either order (checked over all 206 files of an
+  app-only win-x64 publish, and the 19 of a framework-dependent Linux one). The CLI still goes second: it references the
+  app, so its package set covers both. `subs2srs.exe` stays a GUI-subsystem exe and `subs2srs-cli.exe`
+  is a console one. `bundle-gtk.ps1` does nothing for the CLI, which loads no GTK.
+- On Linux, `make build` publishes both (framework-dependent), and `make install` copies the CLI's
+  publish over the app's in `/usr/lib/subs2srs/` and installs `dist/subs2srs-cli.sh` as
+  `/usr/bin/subs2srs-cli`. Unlike the GUI's launcher it does not `cd`, so relative `--project` and
+  `--season` paths stay the caller's; it creates `~/.config` and `~/.local/share` instead (see
+  [open-items.md](open-items.md)).
 - `bundle-gtk.ps1` copies seed DLLs plus their `ntldd -R` closure from MSYS2 UCRT64 flat next to the exe,
   compiled GSettings schemas, a pruned Adwaita icon set (`-FullIconTheme` for all), the png/jpeg/svg
   pixbuf loaders with a **relative** `loaders.cache`, and licences gathered via `pacman -Qqo`.
@@ -84,6 +96,17 @@ same GirCore packages, loads the assemblies and prints method signatures, tolera
   window titled "subs2srs" exists and `preferences.json` was created. It waits up to `-TimeoutSeconds`
   (60) because a cold start right after publish takes ~7 s while Defender scans the new DLLs. It cannot
   redirect `%APPDATA%` (shell API, not env vars), so it removes a `preferences.json` it created itself.
+  Then it runs `subs2srs-cli.exe --version` and `subs2srs-cli.exe go --help` from the same folder,
+  with the same PATH, and requires exit 0 and an expected line on stdout. It runs them through
+  `Start-Process` with both streams in temp files, read as UTF-8 (the CLI writes UTF-8 when
+  redirected), because of the 5.1 rule below.
+- `release.yml` also runs by hand (`workflow_dispatch`; `gh workflow run release.yml --ref <branch>`,
+  and the Actions tab shows the button once the trigger is on the default branch). Off a tag the
+  version is `0.0.0-dev` and the zip is only uploaded as a workflow artifact; only a `v*` tag attaches
+  it to a release. The zip is checked for both exes. The publish step sets
+  `$PSNativeCommandUseErrorActionPreference`: without it only the step's last command could fail it,
+  and a failing `--locked-mode` restore went unnoticed. The first run by hand, on 2026-10-04, was
+  green.
 - The scripts must run on **Windows PowerShell 5.1** as well as 7. In 5.1, a native command's redirected
   stderr becomes a terminating error under `$ErrorActionPreference='Stop'`; that is why `bundle-gtk.ps1`
   wraps native calls in `Invoke-Native`. No `&&`, `||`, `?:`, `??` in these scripts.

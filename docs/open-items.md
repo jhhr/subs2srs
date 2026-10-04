@@ -28,6 +28,42 @@ decision in the topic doc.
   switch penalty (2.5 lines of overlap) and the 28 s gap threshold inherited from the original tool are
   untested defaults. Run `subsretimer --auto EN.srt JP.ass` on a real episode and read the segment
   summary on stderr. The launcher has never been run on Windows.
+- **`subs2srs-cli go` has not made a real season on Windows.** Its tests run on the Windows CI job
+  in-process, on generated media and a fake model, and the bundled `subs2srs-cli.exe` has passed the
+  smoke test; no real season (real mkv files, retimed JP files, `claude` grouping) has been through it.
+  The user's first step is one real episode by hand (phase 0 of the season-batch plan in the
+  subsretimer repository).
+
+## Small known faults
+
+- **The GUI says "Action cancelled." for a failed step** that stopped by returning false (the audio
+  worker's own failures): `SubsProcessor.StartAsync`'s catch shows that dialog for a
+  `StepStoppedException` as for a cancel, and `MainWindow.GoAsync` ignores the `PipelineResult`, which
+  says `Failed` with the step and the reason. A one-line change in that catch if wanted.
+- **"Processing completed in 0,02 minutes."**: `StartAsync` formats the time with the current culture,
+  so the INFO line and `PipelineResult.Message` show a decimal comma on such systems.
+- **`UtilsVideo.validateAudioStreamConsistency` numbers episodes by position** (`i + 1`), not by
+  `Settings.EpisodeNumber`: in a season run with episode 2 skipped, the audio-stream warning calls
+  episode 3 "2". With no video holding the stream it names episode -1 as the reference.
+- **`Environment.GetFolderPath` returns "" when `~/.config` or `~/.local/share` does not exist**
+  (Linux), so the preferences file, the log folder, the AI cache and the `claude` working folder become
+  relative paths under the current directory (seen: `subs2srs/Logs/log-*.txt` in a project folder).
+  The GUI's launcher and the `subs2srs-cli` wrapper create both folders first; running
+  `/usr/lib/subs2srs/subs2srs-cli` or a development build directly does not. The fix in the app would
+  be `SpecialFolderOption.DoNotVerify`.
+- **Every `subs2srs-cli` run leaves an empty `log-*.txt`** in the log folder: `CliRunner.RunAsync`
+  touches `Logger.Instance`, whose constructor creates the file, before it turns file logging off.
+- **`subs2srs-cli.exe` has no `app.manifest`**, unlike `subs2srs.exe` (whose manifest sets long paths
+  and the UTF-8 code page). Whether a long path breaks it on Windows is untested. It has no icon
+  either; when `assets/subs2srs.ico` lands (deferred below), only the app's csproj picks it up.
+
+## Flaky tests seen once
+
+- The Windows CI UI job hung once in `PreviewGroupingTests.Preview_ProposesEditsAndExportsGrouping`
+  (b912688: the GTK thread wedged, 11 timeouts after it) and passed on the next commit; it has not
+  recurred. One local Release run failed `PreviewGroupingScrollTests` with "leaked MainWindow" (which
+  hides the test body's own failure) and did not recur in 14 runs. Cause unknown for both; if either
+  comes back, keep the log.
 
 ## Defaults that are guesses
 
@@ -57,13 +93,10 @@ No labelled data existed when these were chosen. The eval console exists to sett
 ## Deferred features
 
 - **`subsretimer` integration**, in order of value:
-  1. The tool's interactive editor is not ported yet, so the launcher's non-auto path fails with the
-     tool's "use --auto" message. Nothing on the subs2srs side changes when it lands; the contract
-     already covers a window that saves zero or more files.
-  2. Wildcard patterns in Subs1/Subs2 are refused by the dialog. The planned batch mode resolves both
+  1. Wildcard patterns in Subs1/Subs2 are refused by the dialog. The planned batch mode resolves both
      patterns with `UtilsSubs.getSubsFiles`, pairs by index, runs `--auto` per pair behind a progress
      bar and offers to rewrite the pattern to the `_retimed` files.
-  3. Small code follow-ups from the docs review: `SubsRetimerLauncher.RunAsync` builds its own
+  2. Small code follow-ups from the docs review: `SubsRetimerLauncher.RunAsync` builds its own
      `ProcessStartInfo` instead of `UtilsCommon.makeToolStartInfo`, so its pipes are not forced to
      UTF-8 (a non-ASCII saved path on Windows would come back garbled); the two `SubsRetimer*`
      preferences are not in `DialogPref` or `Logger.writeSettingsToLog` (the "five places" rule);

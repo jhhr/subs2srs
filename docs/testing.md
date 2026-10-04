@@ -95,6 +95,51 @@ scope's temp dir and then inspect files:
 
 Prefer a pure argument-builder function plus a unit test over a new e2e test; e2e tests cost seconds each.
 
+Explicit episode numbers are tested here too: `SubsProcessorE2ETests.EpisodeNumbers_InTagsSequenceMarkersAndEveryMediaName`
+sets `Settings.EpisodeNumbers` (and `EpisodeCountForNames`) by hand and checks the TSV tags, sequence
+markers and every media name, and that nothing else lands in `.media`;
+`TimeShiftRule_IsChosenByTheExplicitEpisodeNumber` checks the per-episode time-shift rule. The
+`PipelineResult` tests sit beside them (`CompletedRun_*`, `FailingWorker_*`, `CancelWhileAWorkerRuns_*`,
+`UnwritableOutputDir_*`).
+
+## Command-line tests (`subs2srs-cli`)
+
+| Class | Covers |
+| --- | --- |
+| `EpisodeListTests` | The episode list: `EpisodeList.ForSeason` as a pure function of a folder listing, the folder read, the patterns paired |
+| `ProjectFilesTests` | `ProjectFiles.Resolve` giving the arrays the GUI's `SaveSettings` gives (`MainWindowFlowTests` pins those with the same `PatternSet`) |
+| `GoChecksTests` | Each check of `GoChecks` alone |
+| `CliTests` | The command: usage, dry runs, the checks under the table, real runs, exit codes, the built console once |
+| `CliAiPrePassTests` | `go` on a project grouped by AI: the pre-pass, the usage limit, the AI column |
+
+- **In-process.** `CliTests.Run(args)` calls `CliRunner.RunAsync(args, stdout, stderr)` with two
+  `StringWriter`s inside a `TestScope`. `CliTests.SaveProject` saves the scope's settings as a
+  `.s2s.json`, then resets `Settings.Instance`, so only the file carries them, as for a user. Most
+  pass `--no-prefs`, which leaves the preferences in memory (what the test set in
+  `ConstantSettings`) as they are; `--prefs <file>` reads a file the test wrote.
+- `UtilsMsg` writes to `Console.Error`, not to the writer `RunAsync` was given, so its lines (the
+  pipeline's error, a warning's question) are not in the captured stderr. Assert on the CLI's own
+  lines, the table and the files.
+- **Fake ffmpeg.** The checks need ffmpeg, so a dry-run test that is about the list calls
+  `CliTests.FakeFfmpeg`: an empty file named `ffmpeg` in the *Tools Directory*. The ffmpeg check only
+  looks for the file; the audio-stream check, the one place a dry run starts it, then finds no stream.
+  Tests that really run the pipeline use the real ffmpeg (`[RequiresFfmpegFact]`).
+- **Season folders.** `CliTests.MakeSeason` creates `Show S1 [Grp] 日本/` with an `s2s/` subfolder and
+  the empty files it is given (bracketed and Japanese names); a dry run never reads them. A real run
+  needs real files: `RealEpisode` copies the test video as `<name>.mkv` and writes the harness dialogue
+  as `<name>.ja.srt` and `<name>.en.srt`. `CliAiPrePassTests.Episode` starts every line with `E<n> ` so
+  each episode asks the model something else (the cache key is the content) and a card shows whose text
+  it carries; all but one of its runs make the TSV only, so an empty `.mkv` will do.
+- Padding needs at least ten videos to be tested: with three, the run's count and the season's give
+  the same single digit (the padding test adds empty videos 4 to 10).
+- `CliAiPrePassTests` never starts `claude`: the model is `FakeChatProvider`, or the `claude` transport
+  with `ClaudeCliProvider.RunnerOverride` scripted to answer or to hit the usage limit. Its `Dispose`
+  resets the overrides, the probe cache and the usage limit (`ClaudeCliProvider.Reset()`), which
+  otherwise stays set for the rest of the test process.
+- **The built console**, once: `CliTests.RealProcess_JapaneseNames_ReachARedirectedCallerAsUtf8` runs
+  `dotnet subs2srs-cli.dll` (the project reference copies it next to the tests) under a Latin-1
+  `LC_ALL`, with the fake ffmpeg's folder on `PATH`, and checks that stdout is UTF-8 without a BOM.
+
 ## GTK UI tests (`subs2srs.UiTests`)
 
 - `GtkFixture` owns the one GTK thread for the whole run (`[Collection(GtkCollection.Name)]` on every

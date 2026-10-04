@@ -35,6 +35,101 @@ Consequence: anything that must be visible or editable before media generation b
 Go with mode AI but without preview joins and without *AI Grouping On Go* silently uses the rules and
 writes a log line. That is deliberate (no dialog in the middle of Go).
 
+## The command line (`subs2srs-cli`)
+
+`subs2srs.Cli` (assembly `subs2srs-cli`) is the pipeline's second caller: a console exe on every
+platform, because the GUI is a `WinExe` on Windows and has no console. `Program.Main` sets up the
+standard streams and Ctrl+C and calls `CliRunner.RunAsync(args, stdout, stderr, token)`, which the
+tests call in-process. It references the app (`InternalsVisibleTo("subs2srs-cli")`); what the GUI and
+the command line share is GTK-free code in `subs2srs/` (`ProjectFiles`, `GoChecks`, `PipelineResult`).
+
+- Preferences are read with `PrefIO.ReadFile`, never `PrefIO.read`, which writes a missing file and
+  migrates an old one: the command line never writes the GUI's preferences.
+- `UtilsMsg` already writes `ERROR:`/`INFO:`/`CONFIRM:` lines to `Console.Error` before calling its
+  hooks, so only `OnShowConfirm` is set (it answers `--yes`). File logging is off; `--verbose` sets
+  `Logger.Instance.Echo`.
+- stdout carries the table only; progress (`ConsoleProgress`), the checks and `UtilsMsg` go to
+  stderr. A redirected stream gets a UTF-8 writer without a BOM; a console gets
+  `Console.OutputEncoding` UTF-8, put back on exit because the parent shares that console.
+
+### Setting up a run
+
+`go` starts from `ProjectIO.Load`, which restores every saved setting but leaves the `Files` arrays
+empty and `EpisodeNumbers`/`EpisodeCountForNames` null (`RestoreFrom`). Everything that describes the
+run is therefore set after the load:
+
+- **Pattern mode** (no `--season`): `ProjectFiles.Resolve()`, which `MainWindow.SaveSettings` calls
+  too: patterns into `Files`, cut to *Episode End #*, `UpdateAudioFilenameFormats()`. Then
+  `EpisodeList.Pair` refuses unequal counts, which the pipeline would hit part-way as an index out of
+  range.
+- **Season mode**: `EpisodeList.FromSeason` (a thin wrapper over the pure `ForSeason`), then
+  `CliRunner.SetUpSeasonRun`:
+  - `Subs[0/1].Files` and `VideoClips.Files`: the ready episodes, in order.
+  - `Subs[0/1].FilePattern` too, set to the first ready episode's own file. The pipeline reads the
+    patterns, not only `Files`: `Subs[1].FilePattern != ""` is how `WorkerSrs` and `WorkerSubs` know
+    there is a Subs2, and both patterns are checked for VobSub. A name, not a wildcard: season file
+    names hold `[`.
+  - `AudioClips.FilePattern` and `Files` cleared: `WorkerAudio` indexes `AudioClips.Files` by episode
+    whenever it is not empty, even with audio from the video, so a project's leftover audio pattern
+    would crash the run. (`FromSeason` refuses a project with audio from audio files.)
+  - `EpisodeNumbers`: each ready episode's number, its position among the videos plus the start
+    number, so a skipped episode does not renumber the others. `Settings.EpisodeNumber(index)` is the
+    one place tags, sequence markers, media names, log lines, the parser and the per-episode
+    time-shift rules read it from; the list must be as long as the `Files` arrays.
+  - `EpisodeCountForNames`: the season's video count within *Episode End #*, skipped episodes
+    included. Otherwise `${0:episode_num}` is padded to the digits of the run's own episode count, so
+    a run of 9 episodes would name episode 3 `3` and a run of 10 `03`, and tags and media names would
+    change from one run to the next.
+  - `ConstantSettings.UpdateAudioFilenameFormats()`, which pattern mode gets from `Resolve`.
+
+The GUI sets neither: `EpisodeNumber(index)` falls back to `index + EpisodeStartNumber` and the padding
+to the run's count, as before.
+
+### Checks shared with Go
+
+`GoChecks.Run(settings, audioStreamIndex, aiGroupingRuns)` returns every problem at once: errors (the
+output dir, created if missing, written and cleaned up again; deck name; ffmpeg; the animated snapshot
+encoder; `claude` for a `terminal-` model) and the audio-stream warning. Each guards a failure that
+would otherwise come part-way through a run. `MainWindow.GoAsync` calls it after `SaveSettings`, off
+the GTK thread (the audio check runs ffprobe on every video), shows all errors in one dialog and asks
+each warning. `go` lists them on stderr and refuses on an error, and puts each warning to
+`UtilsMsg.showConfirm`. The callers differ in `aiGroupingRuns`: the GUI passes
+`WorkerSubs.aiGroupingOnGoApplies` (Go asks the model only when its own AI step runs), `go` passes
+"mode is AI" (its pre-pass always asks). `GoChecks.AudioStreamIndex` turns a loaded project's
+`VideoClips.AudioStream` into the GUI list's position.
+
+### AI first, then one run
+
+With snippet mode AI, `AiPrePass` runs before the pipeline: *Combine subs* and *Inactivate lines* (the
+`WorkerSubs` calls `DoWork` makes, on a `WorkerVars` like `StartAsync`'s), then `AiGrouper.Group` per
+episode. Episodes left without an AI grouping are taken out of the line lists, the `Files` arrays and
+`EpisodeNumbers` (`DropSkipped`, `KeepEpisodes`; `EpisodeCountForNames` stays). The rest go to
+`StartAsync(progress, combinedAll, joins)`, the Preview → Go hand-off: the pipeline skips its first
+steps and, since every episode has joins, its own AI step, so *AI Grouping On Go* plays no part.
+
+- Why not the pipeline's AI step: there a failed episode falls back to the rules, and the season batch
+  wants it skipped and grouped by the model on a later run.
+- One run over every episode keeps *Remove duplicate lines* spanning the season, as in the GUI. Its
+  table spans every ready episode, the ones the AI step then drops included: the lines left active are
+  the ones the model grouped and the cache key hashes, so re-inactivating after the drop would change
+  them.
+- `ClaudeCliProvider.UsageLimit` stays set for the rest of the process. From then on an episode whose
+  answer is not cached (`AiGrouper.Estimate(...).Cached`) is skipped without a request; a cached one
+  still runs. An episode during which the limit was hit is skipped even when only some chunks failed:
+  such a result is not cached, so the next run redoes it whole. Chunks that failed for another reason
+  keep their episode, grouped by the rules there, with a warning.
+
+### The run's result
+
+`SubsProcessor.StartAsync` returns a `PipelineResult`. `Status` is `Cancelled` only when the reporter's
+`Cancel` or token is set; any other stop is `Failed`, a step that returned null or false included (it
+throws a private `StepStoppedException`). `Message` is one line, "<step label> failed: <detail>" for a
+failure. `CardsPerEpisode` is by index into the `Files` arrays (map it through `EpisodeNumber`;
+context-only lines are not cards), and `ImportFile` is set once the TSV writer is open. The GUI ignores
+the result and still learns the outcome from its dialogs ([open-items.md](open-items.md)); `go` turns it
+into the table and the exit code, and deletes the `ImportFile` of a `Failed` or `Cancelled` run, whose
+cards lack media.
+
 ## Snippets
 
 A snippet is a card built from several consecutive subtitle lines. There is no snippet type:
@@ -180,10 +275,16 @@ breaking change here):
 | `subsretimer [options] [REFERENCE] [TARGET]`; REFERENCE is the file already timed to the video, TARGET the one to re-time | The dialog's *Reference* radio decides which of Subs1/Subs2 is which; the other side is the one that gets replaced afterwards |
 | Paths are passed after `--` | So a file name starting with `-` cannot be read as an option |
 | `--ref-encoding` / `--target-encoding` take subs2srs **short** encoding names (`utf-8`, `shift_jis`, …) | `InfoEncoding.longToShort` on the main window's dropdown values |
-| `--auto` runs the alignment and saves without a window; without it the tool opens its editor | The *Auto-align* checkbox. Until the tool's editor is ported, non-auto runs exit 1 with a message |
+| `--auto` runs the alignment and saves without a window; without it the tool opens its editor | The *Auto-align* checkbox. Without it the editor opens and the run ends when it closes: exit 0 when it saved (each path printed as it is written), 2 when it did not |
 | `--auto` never overwrites `<TARGET>_retimed.<ext>` unless `--output` names it | A second run on the same pair therefore fails; the error text says so |
 | With `--print-output`, **stdout carries only saved paths**, one per line, flushed on each save; everything else goes to stderr | `ParseResult` takes the last non-empty stdout line as the saved file |
 | Exit `0` = at least one file saved, `2` = nothing saved (editor closed, or a file had no timed lines), `1` = error on stderr; anything else is treated as an error | `Result.Saved` / `NothingSaved` / `Failed`. Exit 0 with an empty stdout counts as nothing saved |
+
+The tool has since gained options the launcher does not pass yet and a batch caller will want:
+`--min-match FRACTION` (with `--auto`, save only when the target covers that share of the reference,
+else exit 2), `--report PATH` (a JSON report of an `--auto` run that exits 0 or 2), and redirected
+stdout/stderr always written as UTF-8 without a byte-order mark, so a caller must read its pipes as
+UTF-8. The tool's README ("Contract for other programs") has the details.
 
 The executable is found like every other tool, `ConstantSettings.ResolveToolOrName("subsretimer")`
 (*Tools Directory*, then PATH, `.exe` on Windows), and `SubsRetimerLauncher.IsAvailable` gates the

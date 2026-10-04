@@ -73,9 +73,126 @@ in the *Tools Directory* preference), prefilled with the Subs1 and Subs2
 files from the main window. Choose which file is the reference (the one
 already matching your video), tick *Auto-align* to run the alignment without
 opening the tool's editor, and on success subs2srs offers to put the re-timed
-file into the corresponding field. Until subsretimer's interactive editor is
-ported, leave *Auto-align* ticked; the editor path reports that it is not
-available yet.
+file into the corresponding field. Without *Auto-align* the tool's editor
+opens on the pair; when you save there, subs2srs offers the saved file the
+same way.
+
+## Command line: a season in one command (`subs2srs-cli`)
+
+`subs2srs-cli` makes the cards of a whole season without the GUI: every episode in one run, into
+one import file, with the episodes it cannot do left out and the others keeping their episode
+numbers.
+
+Set the show up once in the GUI (card fields, audio, snapshots, snippet mode, deck name, output
+directory, the Subs1 and Subs2 encodings, *Episode Start #*) and save it with File → Save Project.
+`go` takes every setting from that `.s2s.json`, and the files from a season folder:
+
+```sh
+subs2srs-cli go --project show.s2s.json --season "Show S1" --dry-run   # list, check, make nothing
+subs2srs-cli go --project show.s2s.json --season "Show S1"
+```
+
+In short: `go --project FILE [--season DIR] [--dry-run] [--grouping rules|off] [--yes] [--verbose]
+[--prefs FILE | --no-prefs]`. From `subs2srs-cli --help`:
+
+```text
+  --project <file>  the project file
+  --season <dir>    take the episodes from a season folder instead of the project's
+                    Subs1, Subs2 and video patterns: every *.mkv in <dir>, sorted as
+                    the GUI sorts files and numbered from the project's Episode Start #,
+                    with s2s/<video name>.ja.<ext> as Subs1 and s2s/<video name>.en.<ext>
+                    as Subs2 (<ext> ass, ssa or srt; the tag in any case). An episode
+                    without exactly one of each is skipped and keeps its number; videos
+                    after the project's Episode End # are left out. Audio clips come
+                    from the videos.
+  --dry-run         print the episode list (with whether each episode's AI grouping
+                    is cached) and the checks before starting, and stop
+  --grouping <mode> group the lines into snippets by this mode instead of the
+                    project's: rules or off, so a project that groups by AI runs
+                    without the model.
+  --yes             answer yes when asked to confirm (the answer is no otherwise),
+                    as at a warning of the checks
+  --prefs <file>    read this preferences JSON file instead of the user's preferences.json
+  --no-prefs        do not read preferences.json
+  --verbose         echo the application log to stderr
+  --help            this text
+  --version         the version
+```
+
+A season folder holds the videos and, in its `s2s` subfolder, the subtitles of each video under
+the video's own name:
+
+```text
+Show S1/
+  Show - 01.mkv
+  Show - 02.mkv
+  Show - 03.mkv
+  s2s/
+    Show - 01.ja.srt     Subs1 of episode 1
+    Show - 01.en.ass     Subs2 of episode 1
+    Show - 02.en.ass     no .ja file: episode 2 is skipped
+    Show - 03.ja.srt     episode 3 is still episode 3
+    Show - 03.en.ass
+```
+
+- The order is the GUI's file order, by name and not by number: pad the numbers (`02`, not `2`)
+  so that episode 2 sorts before episode 10.
+- The names must match the video's exactly, brackets and all; they are never read as wildcards.
+  The project's Subs1 encoding applies to the `.ja` files and its Subs2 encoding to the `.en` files.
+- With `--season`, audio clips come from the videos; a project that takes them from audio files is
+  refused.
+- Tags and media file names number and pad every episode as a run over the whole season would, so
+  they stay the same from one run to the next whichever episodes were skipped.
+- Without `--season`, `go` uses the project's own patterns, paired by position as in the GUI, and
+  refuses when they match different numbers of files.
+
+Before starting, `go` makes the checks the GUI's Go makes and lists every error at once: the output
+directory can be written, a deck name, ffmpeg (and the animated snapshot encoder when that output is
+on), and `claude` when snippets are grouped by AI through it. A warning (a video without the
+project's audio stream) stops `go` unless `--yes` is given.
+
+**AI grouping.** When the project's snippet mode is AI, `go` first asks the model to group every
+episode it found, as the Preview does, then makes the cards of all of them in one run. The *AI
+Grouping On Go* preference plays no part here.
+
+- A cached answer is used without asking. The cache is the GUI's, so a Preview of the episode later
+  costs nothing either. `--dry-run` shows `cached` or `not cached` per episode without asking.
+- An episode the model cannot group is skipped, not grouped by the rules. One where only some
+  requests failed keeps the rules' grouping for those parts, with a warning; it is not cached, so
+  the next run asks again.
+- Once the Claude usage limit is reached, every remaining episode without a cached answer is
+  skipped without asking. Run the same command again after the limit resets: the episodes already
+  grouped come from the cache, only the skipped ones are asked, and the TSV is written again with
+  every episode.
+- `--grouping rules` (or `off`) runs an AI project without the model.
+
+The table goes to stdout; progress, warnings and errors go to stderr (`--verbose` adds the
+application log). After a run:
+
+```text
+#  Episode    AI           Status                                       Cards
+1  Show - 01  grouped      done                                         148
+2  Show - 02  -            skipped: no .ja file                         -
+3  Show - 03  cached       done                                         151
+4  Show - 04  usage limit  skipped: the Claude usage limit was reached  -
+season TSV: D:\Anki\Show S1\Show_S1.tsv (2 of 4 episodes); exit 3
+```
+
+| Exit | Meaning |
+| --- | --- |
+| `0` | Every episode done (with `--dry-run`: every episode found and no check failed) |
+| `3` | Done, but some episodes were skipped; the table says why |
+| `1` | An error before any work (usage, project, folder, file counts, a failed check, no to a warning), or a step of the run failed: its message is on stderr, and the TSV the run had started is deleted |
+| `130` | Cancelled (Ctrl+C); a TSV the run had started is deleted too |
+
+`go` reads the GUI's `preferences.json` (the *Tools Directory*, the AI settings and cache) and never
+writes it; `--prefs FILE` reads another file, `--no-prefs` none. It opens no window and needs no
+display.
+
+Install: on Linux `make install` puts `/usr/bin/subs2srs-cli` next to the GUI's launcher. On
+Windows, `subs2srs-cli.exe` is next to `subs2srs.exe` in the zip (and in `out/win-x64` after
+`make publish-windows`); run it from PowerShell or cmd by its path, or add the folder to `PATH`.
+From a source tree: `dotnet run --project subs2srs.Cli -- go --project ...`.
 
 ## Build
 
