@@ -495,12 +495,16 @@ namespace subs2srs.Tests
       return p;
     }
 
-    private static string WriteSrt(string dir, string name, double offsetSecondsAfterLine40)
+    /// <summary>
+    /// An SRT of numbered lines with random timings (the same for every call), the lines after the
+    /// 40th <paramref name="offsetSecondsAfterLine40"/> late; the first <paramref name="lines"/> of 120.
+    /// </summary>
+    internal static string WriteSrt(string dir, string name, double offsetSecondsAfterLine40, int lines = 120)
     {
       var sb = new System.Text.StringBuilder();
       var rnd = new Random(3);
       double t = 1.0;
-      for (int i = 1; i <= 120; i++)
+      for (int i = 1; i <= lines; i++)
       {
         double dur = 0.6 + rnd.Next(0, 2400) / 1000.0;
         double off = i > 40 ? offsetSecondsAfterLine40 : 0;

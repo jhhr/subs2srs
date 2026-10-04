@@ -122,11 +122,11 @@ namespace subs2srs.Cli
     /// subtitle extension, compared whole and ignoring case (as Windows compares file names),
     /// never as a wildcard pattern: names hold '[', ']' and other pattern characters.
     /// </summary>
-    private static List<string> Named(IEnumerable<string> names, string videoName, string tag)
+    internal static List<string> Named(IEnumerable<string> names, string videoName, string tag)
       => names.Where(n => SubsExtensions.Any(ext => string.Equals(n, videoName + tag + ext, StringComparison.OrdinalIgnoreCase)))
               .ToList();
 
-    private static string? Problem(List<string> found, string tag) => found.Count switch
+    internal static string? Problem(List<string> found, string tag) => found.Count switch
     {
       1 => null,
       0 => $"no {tag} file",
