@@ -27,6 +27,8 @@
   <ItemGroup>
     <InternalsVisibleTo Include="subs2srs.Tests" />
     <InternalsVisibleTo Include="subs2srs.UiTests" />
+    <!-- subs2srs-cli (project subs2srs.Cli) runs the pipeline, whose classes are internal. -->
+    <InternalsVisibleTo Include="subs2srs-cli" />
   </ItemGroup>
 
   <ItemGroup>

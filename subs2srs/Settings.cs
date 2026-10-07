@@ -213,11 +213,53 @@ namespace subs2srs
 
     /// <summary>
     /// Resolve an external tool: the Tools Directory preference first,
-    /// then PATH. Returns null when the tool cannot be found.
+    /// then PATH, then for MKVToolNix's tools its install folder
+    /// (<see cref="MkvToolNixDirs"/>). Returns null when the tool cannot be found.
     /// </summary>
     public static string? ResolveTool(string name)
     {
-      return FindToolInDir(ToolsDir, name) ?? FindInPath(name);
+      return FindToolInDir(ToolsDir, name) ?? FindInPath(name) ?? FindInMkvToolNixDirs(name);
+    }
+
+    /// <summary>The tools also looked for in <see cref="MkvToolNixDirs"/>.</summary>
+    private static readonly string[] MkvToolNixTools = { "mkvmerge", "mkvextract", "mkvinfo" };
+
+    /// <summary>
+    /// Test hook: the folders searched for MKVToolNix's tools after PATH, on any OS, instead of
+    /// <see cref="MkvToolNixDirs"/>. Null in normal runs; reset it in the test's Dispose.
+    /// </summary>
+    internal static IReadOnlyList<string>? MkvToolNixDirsOverride { get; set; }
+
+    /// <summary>
+    /// Where MKVToolNix's Windows installer puts mkvmerge, mkvextract and mkvinfo without adding
+    /// the folder to PATH: %ProgramFiles%\MKVToolNix, then %ProgramFiles(x86)%\MKVToolNix.
+    /// None on other systems, where packages put them on PATH.
+    /// </summary>
+    internal static List<string> MkvToolNixDirs(bool isWindows, Func<string, string?> getEnv)
+    {
+      var dirs = new List<string>();
+      if (!isWindows) return dirs;
+      foreach (string variable in new[] { "ProgramFiles", "ProgramFiles(x86)" })
+      {
+        string? root = getEnv(variable)?.Trim();
+        if (string.IsNullOrEmpty(root)) continue;
+        string dir = Path.Combine(root, "MKVToolNix");
+        if (!dirs.Contains(dir, StringComparer.OrdinalIgnoreCase)) dirs.Add(dir);
+      }
+      return dirs;
+    }
+
+    private static string? FindInMkvToolNixDirs(string name)
+    {
+      if (!MkvToolNixTools.Contains(name, StringComparer.OrdinalIgnoreCase)) return null;
+      IReadOnlyList<string> dirs = MkvToolNixDirsOverride
+        ?? MkvToolNixDirs(OperatingSystem.IsWindows(), Environment.GetEnvironmentVariable);
+      foreach (string dir in dirs)
+      {
+        string? found = FindToolInDir(dir, name);
+        if (found != null) return found;
+      }
+      return null;
     }
 
     /// <summary>
@@ -299,6 +341,9 @@ namespace subs2srs
     public static string ExeMkvExtract { get; } = "mkvextract";
     public static string PathMkvExtractExeRel { get; } = "mkvextract";
     public static string PathMkvExtractExeFull => ResolveToolOrName(ExeMkvExtract);
+
+    public static string ExeMkvMerge { get; } = "mkvmerge";
+    public static string PathMkvMergeExeFull => ResolveToolOrName(ExeMkvMerge);
 
     public static string SettingsFilename { get; set; } = Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
@@ -1288,6 +1333,49 @@ namespace subs2srs
     [JsonPropertyName("episodeEndNumber")]
     public int EpisodeEndNumber { get; set; }
 
+    /// <summary>
+    /// Explicit episode number of each episode, by index into the <c>Files</c> arrays, so that
+    /// leaving an episode out keeps the numbers of the others. Null (the default, and what the
+    /// GUI uses) numbers them from <see cref="EpisodeStartNumber"/>. Not serialized, like the
+    /// <c>Files</c> arrays.
+    /// </summary>
+    [JsonIgnore]
+    public int[]? EpisodeNumbers { get; set; }
+
+    /// <summary>
+    /// The episode number of the episode at <paramref name="index"/> (0-based, as in the
+    /// <c>Files</c> arrays): <see cref="EpisodeNumbers"/>[index] when set, else
+    /// <c>index + EpisodeStartNumber</c>. Every episode number in names, tags, logs and the
+    /// per-episode time-shift rules comes from here.
+    /// </summary>
+    public int EpisodeNumber(int index)
+    {
+      if (EpisodeNumbers == null)
+        return index + EpisodeStartNumber;
+
+      if (index < 0 || index >= EpisodeNumbers.Length)
+        throw new ArgumentOutOfRangeException(nameof(index), index,
+          $"No episode number for episode index {index}: {EpisodeNumbers.Length} are set.");
+
+      return EpisodeNumbers[index];
+    }
+
+    /// <summary>
+    /// The episode count that <c>${0:episode_num}</c> is zero-padded to in names and tags, so
+    /// that they do not change with the number of episodes in a run (a season run that skips
+    /// some). Null (the default, and what the GUI uses) pads to the run's own count. Not
+    /// serialized, like <see cref="EpisodeNumbers"/>.
+    /// </summary>
+    [JsonIgnore]
+    public int? EpisodeCountForNames { get; set; }
+
+    /// <summary>
+    /// The episode count every <see cref="UtilsName"/> the pipeline builds pads episode numbers
+    /// to: <see cref="EpisodeCountForNames"/> when set, else <paramref name="runEpisodes"/>, the
+    /// number of episodes in the run.
+    /// </summary>
+    public int EpisodeCountForPadding(int runEpisodes) => EpisodeCountForNames ?? runEpisodes;
+
     [JsonPropertyName("actorList")]
     public List<string> ActorList { get; set; }
 
@@ -1353,7 +1441,8 @@ namespace subs2srs
 
     /// <summary>
     /// Overwrite all mutable properties from <paramref name="other"/>.
-    /// Transient arrays (Files) are reset to empty.
+    /// Transient arrays (Files) are reset to empty, <see cref="EpisodeNumbers"/> and
+    /// <see cref="EpisodeCountForNames"/> to null.
     /// </summary>
     public void RestoreFrom(Settings other)
     {
@@ -1381,6 +1470,8 @@ namespace subs2srs
       DeckName = other.DeckName;
       EpisodeStartNumber = other.EpisodeStartNumber;
       EpisodeEndNumber = other.EpisodeEndNumber;
+      EpisodeNumbers = null;
+      EpisodeCountForNames = null;
 
       ActorList = other.ActorList;
 
@@ -1472,6 +1563,8 @@ namespace subs2srs
       DeckName = "";
       EpisodeStartNumber = 1;
       EpisodeEndNumber = 0;
+      EpisodeNumbers = null;
+      EpisodeCountForNames = null;
 
       ActorList = new List<string>();
 

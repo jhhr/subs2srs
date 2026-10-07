@@ -115,7 +115,7 @@ namespace subs2srs.Tests
       Assert.DoesNotContain("translation", s);
       Assert.EndsWith("the show is a workplace comedy", s);
       Assert.DoesNotContain("Additional instructions", AiGroupingPrompt.BuildSystem(15, "  "));
-      Assert.Equal(2, AiGroupingPrompt.PromptVersion); // v2: subs1 only
+      Assert.Equal(3, AiGroupingPrompt.PromptVersion); // v3: exchanges stay together, no thin cards
     }
 
     [Fact]

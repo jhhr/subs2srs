@@ -1,0 +1,54 @@
+{
+  "version": 1,
+  "reference": {
+    "path": "/home/user/Anime/アニメ S1/s2s/第2話.en.srt",
+    "lineCount": 120,
+    "encoding": "utf-8"
+  },
+  "target": {
+    "path": "/home/user/Anime/アニメ S1/第2話.srt",
+    "lineCount": 60,
+    "encoding": "utf-8"
+  },
+  "output": "/home/user/Anime/アニメ S1/s2s/第2話.ja.srt",
+  "segments": [
+    {
+      "firstLine": 1,
+      "lastLine": 40,
+      "offsetMs": 0,
+      "matchedLines": 40,
+      "lineCount": 40
+    },
+    {
+      "firstLine": 41,
+      "lastLine": 60,
+      "offsetMs": -15000,
+      "matchedLines": 20,
+      "lineCount": 20
+    }
+  ],
+  "referenceCoverage": {
+    "covered": 60,
+    "counted": 120,
+    "share": 0.5
+  },
+  "targetMatched": {
+    "matched": 60,
+    "lineCount": 60,
+    "share": 1
+  },
+  "averageMismatchSeconds": {
+    "before": {
+      "all": 0.2952666666666666,
+      "matched": 0.24170689655172414
+    },
+    "after": {
+      "all": 0,
+      "matched": 0
+    }
+  },
+  "minMatch": 0.8,
+  "exitCode": 2,
+  "saved": null,
+  "reason": "below min-match"
+}

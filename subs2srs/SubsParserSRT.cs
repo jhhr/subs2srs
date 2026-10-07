@@ -144,7 +144,8 @@ namespace subs2srs
       TimeSpan endTime = this.parseTime(rawEndTime);
 
       lineText = lineText.Replace("\t", " ");
-      lineText = Regex.Replace(lineText, "</?[ibuIBU]>", "").Trim();
+      // Remove HTML-style tags (<i>, <font color="...">, ...)
+      lineText = Regex.Replace(lineText, "</?[a-zA-Z][^>]*>", "").Trim();
 
       InfoLine info = new InfoLine(startTime, endTime, lineText);
 

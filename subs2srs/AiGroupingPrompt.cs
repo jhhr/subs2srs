@@ -83,7 +83,7 @@ namespace subs2srs
   /// </summary>
   public static class AiGroupingPrompt
   {
-    public const int PromptVersion = 2; // v2: subs1 only, the translation track is not sent
+    public const int PromptVersion = 3; // v3: exchanges between characters stay together, no thin cards; v2: subs1 only
 
     /// <summary>JSON schema of the answer: {"snippets":[{"first":int,"last":int,"note":string}]}.</summary>
     public static JsonElement Schema { get; } = JsonDocument.Parse(
@@ -101,18 +101,23 @@ namespace subs2srs
     /// <summary>
     /// The system prompt. Only the first subtitle track is described: the grouping is decided on subs1,
     /// and the second track (already synced to subs1 by subs2srs) follows it when the snippet is built.
+    /// The wording leans towards one card per exchange between characters and away from cards that hold
+    /// only greetings, names or interjections; a line that is a complete thought still stays single.
     /// </summary>
     public static string BuildSystem(int maxSnippetSeconds, string? extraInstructions)
     {
       var sb = new StringBuilder();
       sb.Append("You group consecutive subtitle lines of a TV episode into short dialogue snippets for language-learning flashcards. ");
-      sb.Append("Each snippet becomes one card with its audio, so a snippet must be understandable on its own.\n\n");
-      sb.Append("Input: a JSON array of lines in order. Each line has i (index), s and e (start and end time), actor (may be empty) and t (the dialogue text).\n\n");
+      sb.Append("Each snippet becomes one card: the learner hears its audio and reads its lines with nothing around them. A good card is understandable on its own and holds enough to be worth studying.\n\n");
+      sb.Append("Input: a JSON array of lines in order. Each line has i (index), s and e (start and end time), actor (may be empty) and t (the dialogue text). ");
+      sb.Append("When actor is empty the text may name the speaker itself, often in brackets where a turn starts, and one line can hold the turns of two speakers.\n\n");
       sb.Append("Rules:\n");
       sb.Append("- A snippet is a range of consecutive lines, first..last inclusive. Ranges must not overlap. Lines you leave out become single-line cards.\n");
-      sb.Append("- Group lines only when a line is not self-contained: an answer without its question, a reply that depends on the previous line, deixis (this, that, there) that the previous line resolves, a sentence split across lines, a joke or callback that needs its setup.\n");
-      sb.Append("- Prefer the smallest group that is self-contained. Most lines stay single. Do not group across scene changes or long pauses.\n");
-      sb.Append(FormattableString.Invariant($"- Never let a snippet span more than {maxSnippetSeconds} seconds from the start of its first line to the end of its last line.\n"));
+      sb.Append("- Keep an exchange between characters together: a question and its answer, a remark and the reaction to it, a greeting and the conversation it opens. Turns that answer each other lose their meaning when cut apart, so when you are unsure whether two turns of one conversation belong together, group them.\n");
+      sb.Append("- Group a line that is not self-contained for another reason with what it needs: deixis (this, that, there) that an earlier line resolves, a sentence split across lines, a joke or callback that needs its setup.\n");
+      sb.Append("- Avoid thin cards. A line that is only a greeting, a name, an interjection or a short acknowledgement gives the learner almost nothing to study, alone or grouped with other such lines. Extend the snippet to the lines of the same conversation that carry the content: greetings run on into what the characters say next, and a short reaction stays with the line it reacts to.\n");
+      sb.Append("- A line that is a complete thought and needs no neighbour stays single: a line of narration or monologue, an announcement, a remark nobody answers. End a snippet where its exchange ends: a new topic starts a new snippet, so a long conversation becomes several snippets. Do not group across scene changes or long pauses.\n");
+      sb.Append(FormattableString.Invariant($"- Never let a snippet span more than {maxSnippetSeconds} seconds from the start of its first line to the end of its last line. When an exchange does not fit, split it at its weakest link, where the next line is easiest to understand without the one before.\n"));
       sb.Append("- note: at most a few words saying why the lines belong together, or an empty string.\n\n");
       sb.Append("Answer with JSON only: {\"snippets\":[{\"first\":12,\"last\":14,\"note\":\"answer to 12\"}]}. Only list multi-line snippets.");
       if (!string.IsNullOrWhiteSpace(extraInstructions))

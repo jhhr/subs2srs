@@ -32,6 +32,19 @@ namespace subs2srs
   public class WorkerAudio
   {
     /// <summary>
+    /// Why <see cref="genAudioClip"/> returned false when it failed rather than being
+    /// cancelled: the message it also showed through <see cref="UtilsMsg"/>. Null otherwise.
+    /// </summary>
+    public string? Error { get; private set; }
+
+    private bool fail(string msg)
+    {
+      Error = msg;
+      UtilsMsg.showErrMsg(msg);
+      return false;
+    }
+
+    /// <summary>
     /// Generate Audio clips for all episodes.
     /// </summary>
     public bool genAudioClip(WorkerVars workerVars, IProgressReporter dialogProgress)
@@ -42,7 +55,7 @@ namespace subs2srs
       int totalLines = UtilsSubs.getTotalLineCount(workerVars.CombinedAll);
       TimeSpan lastTime = UtilsSubs.getLastTime(workerVars.CombinedAll);
 
-      UtilsName name = new UtilsName(Settings.Instance.DeckName, totalEpisodes,
+      UtilsName name = new UtilsName(Settings.Instance.DeckName, Settings.Instance.EpisodeCountForPadding(totalEpisodes),
         totalLines, lastTime, Settings.Instance.VideoClips.Size.Width, Settings.Instance.VideoClips.Size.Height);
 
       var parallelOptions = new ParallelOptions
@@ -117,9 +130,8 @@ namespace subs2srs
             if (dialogProgress.Cancel)
               return false;
 
-            UtilsMsg.showErrMsg("Failed to extract the audio from the video.\n" +
-                                "Make sure that the video does not have any DRM restrictions.");
-            return false;
+            return fail("Failed to extract the audio from the video.\n" +
+                        "Make sure that the video does not have any DRM restrictions.");
           }
 
           useDemuxEncode = true;
@@ -141,9 +153,8 @@ namespace subs2srs
             if (dialogProgress.Cancel)
               return false;
 
-            UtilsMsg.showErrMsg("Failed to demux the audio file.\n" +
-                                "Make sure that the audio file does not have any DRM restrictions.");
-            return false;
+            return fail("Failed to demux the audio file.\n" +
+                        "Make sure that the audio file does not have any DRM restrictions.");
           }
 
           useDemuxEncode = true;
@@ -175,9 +186,8 @@ namespace subs2srs
             if (dialogProgress.Cancel)
               return false;
 
-            UtilsMsg.showErrMsg("Failed to decode the audio.\n" +
-                                "Make sure the source file is not corrupted.");
-            return false;
+            return fail("Failed to decode the audio.\n" +
+                        "Make sure the source file is not corrupted.");
           }
         }
 
@@ -237,7 +247,7 @@ namespace subs2srs
           }
 
           string nameStr = name.createName(ConstantSettings.AudioFilenameFormatWithExt,
-            epNum + Settings.Instance.EpisodeStartNumber - 1,
+            Settings.Instance.EpisodeNumber(epNum - 1),
             item.seqNum, filenameStartTime, filenameEndTime, item.comb.Subs1.Text, lyricSubs2);
 
           string outName = $"{workerVars.MediaDir}{Path.DirectorySeparatorChar}{nameStr}";
@@ -365,7 +375,7 @@ namespace subs2srs
         }
 
         string nameStr = name.createName(ConstantSettings.AudioFilenameFormatWithExt,
-          episodeCount + Settings.Instance.EpisodeStartNumber - 1,
+          Settings.Instance.EpisodeNumber(episodeCount - 1),
           tempCount, filenameStartTime, filenameEndTime, comb.Subs1.Text, lyricSubs2);
 
         string outName = $"{mediaDir}{Path.DirectorySeparatorChar}{nameStr}";
@@ -386,7 +396,7 @@ namespace subs2srs
     private void tagAudio(UtilsName name, string outName, int episodeCount, int curEpisodeCount, int progressCount, int totalTracks,
       TimeSpan filenameStartTime, TimeSpan filenameEndTime, string lyricSubs1, string lyricSubs2)
     {
-      int episodeNum = episodeCount + Settings.Instance.EpisodeStartNumber - 1;
+      int episodeNum = Settings.Instance.EpisodeNumber(episodeCount - 1);
 
       string tagArtist = name.createName(ConstantSettings.AudioId3Artist, episodeNum,
         progressCount, filenameStartTime, filenameEndTime, lyricSubs1, lyricSubs2);

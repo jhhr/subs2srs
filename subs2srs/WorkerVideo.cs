@@ -42,7 +42,7 @@ namespace subs2srs
       int totalLines = UtilsSubs.getTotalLineCount(workerVars.CombinedAll);
       TimeSpan lastTime = UtilsSubs.getLastTime(workerVars.CombinedAll);
 
-      UtilsName name = new UtilsName(Settings.Instance.DeckName, totalEpisodes,
+      UtilsName name = new UtilsName(Settings.Instance.DeckName, Settings.Instance.EpisodeCountForPadding(totalEpisodes),
         totalLines, lastTime, Settings.Instance.VideoClips.Size.Width, Settings.Instance.VideoClips.Size.Height);
 
       var parallelOptions = new ParallelOptions
@@ -152,7 +152,7 @@ namespace subs2srs
           }
 
           string nameStr = name.createName(ConstantSettings.VideoFilenameFormat,
-            epNum + Settings.Instance.EpisodeStartNumber - 1,
+            Settings.Instance.EpisodeNumber(epNum - 1),
             item.seqNum, filenameStartTime, filenameEndTime, item.comb.Subs1.Text, item.comb.Subs2.Text);
 
           string outFile = $"{workerVars.MediaDir}{Path.DirectorySeparatorChar}{nameStr}{videoExtension}";
@@ -221,7 +221,7 @@ namespace subs2srs
         }
 
         string nameStr = name.createName(ConstantSettings.VideoFilenameFormat,
-          episodeCount + Settings.Instance.EpisodeStartNumber - 1,
+          Settings.Instance.EpisodeNumber(episodeCount - 1),
           tempCount, filenameStartTime, filenameEndTime, comb.Subs1.Text, comb.Subs2.Text);
 
         string outFile = $"{mediaDir}{Path.DirectorySeparatorChar}{nameStr}{videoExtension}";

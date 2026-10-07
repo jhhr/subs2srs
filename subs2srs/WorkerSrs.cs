@@ -45,6 +45,9 @@ namespace subs2srs
     private int progressCount = 0;
     private InfoCombined mainComb;
 
+    /// <summary>The import file <see cref="genSrs"/> opened for writing, once it has; null before.</summary>
+    public string? ImportFile { get; private set; }
+
 
     /// <summary>
     /// Based on timings, determine if this line is within the context range.
@@ -113,7 +116,7 @@ namespace subs2srs
 
       lastTime = UtilsSubs.getLastTime(workerVars.CombinedAll);
 
-      name = new UtilsName(Settings.Instance.DeckName, totalEpisodes,
+      name = new UtilsName(Settings.Instance.DeckName, Settings.Instance.EpisodeCountForPadding(totalEpisodes),
         totalLines, lastTime, Settings.Instance.VideoClips.Size.Width, Settings.Instance.VideoClips.Size.Height);
 
       string nameStr = name.createName(ConstantSettings.SrsFilenameFormat, 0,
@@ -124,6 +127,7 @@ namespace subs2srs
       string srsFilename = Path.Combine(Settings.Instance.OutputDir, nameStr);
 
       using var srsWriter = new StreamWriter(srsFilename, false, Encoding.UTF8);
+      ImportFile = srsFilename;
 
       // For each episode
       foreach (List<InfoCombined> combArray in workerVars.CombinedAll)
@@ -367,7 +371,7 @@ namespace subs2srs
       TimeSpan startTime = comb.Subs1.StartTime;
       TimeSpan endTime = comb.Subs1.EndTime;
 
-      return name.createName(ConstantSettings.SrsTagFormat, episodeIndex + Settings.Instance.EpisodeStartNumber,
+      return name.createName(ConstantSettings.SrsTagFormat, Settings.Instance.EpisodeNumber(episodeIndex),
          progressCount, startTime, endTime, comb.Subs1.Text, comb.Subs2.Text);
     }
 
@@ -380,7 +384,7 @@ namespace subs2srs
       TimeSpan startTime = comb.Subs1.StartTime;
       TimeSpan endTime = comb.Subs1.EndTime;
 
-      return name.createName(ConstantSettings.SrsSequenceMarkerFormat, episodeIndex + Settings.Instance.EpisodeStartNumber,
+      return name.createName(ConstantSettings.SrsSequenceMarkerFormat, Settings.Instance.EpisodeNumber(episodeIndex),
         progressCount, startTime, endTime, comb.Subs1.Text, comb.Subs2.Text);
     }
 
@@ -405,13 +409,13 @@ namespace subs2srs
         endTime = comb.Subs1.EndTime;
       }
 
-      string prefixStr = name.createName(ConstantSettings.SrsAudioFilenamePrefix, episodeIndex + Settings.Instance.EpisodeStartNumber,
+      string prefixStr = name.createName(ConstantSettings.SrsAudioFilenamePrefix, Settings.Instance.EpisodeNumber(episodeIndex),
          progressCount, startTime, endTime, comb.Subs1.Text, comb.Subs2.Text);
 
-      string nameStr = name.createName(ConstantSettings.AudioFilenameFormatWithExt, episodeIndex + Settings.Instance.EpisodeStartNumber,
+      string nameStr = name.createName(ConstantSettings.AudioFilenameFormatWithExt, Settings.Instance.EpisodeNumber(episodeIndex),
          progressCount, startTime, endTime, comb.Subs1.Text, comb.Subs2.Text);
 
-      string suffixStr = name.createName(ConstantSettings.SrsAudioFilenameSuffix, episodeIndex + Settings.Instance.EpisodeStartNumber,
+      string suffixStr = name.createName(ConstantSettings.SrsAudioFilenameSuffix, Settings.Instance.EpisodeNumber(episodeIndex),
          progressCount, startTime, endTime, comb.Subs1.Text, comb.Subs2.Text);
 
       return $"{prefixStr}{nameStr}{suffixStr}";
@@ -427,13 +431,13 @@ namespace subs2srs
       TimeSpan endTime = comb.Subs1.EndTime;
       TimeSpan midTime = UtilsSubs.getMidpointTime(comb.Subs1.StartTime, comb.Subs1.EndTime);
 
-      string prefixStr = name.createName(ConstantSettings.SrsSnapshotFilenamePrefix, episodeIndex + Settings.Instance.EpisodeStartNumber,
+      string prefixStr = name.createName(ConstantSettings.SrsSnapshotFilenamePrefix, Settings.Instance.EpisodeNumber(episodeIndex),
         progressCount, startTime, endTime, comb.Subs1.Text, comb.Subs2.Text);
 
-      string nameStr = name.createName(ConstantSettings.SnapshotFilenameFormat, episodeIndex + Settings.Instance.EpisodeStartNumber,
+      string nameStr = name.createName(ConstantSettings.SnapshotFilenameFormat, Settings.Instance.EpisodeNumber(episodeIndex),
         progressCount, startTime, endTime, comb.Subs1.Text, comb.Subs2.Text);
 
-      string suffixStr = name.createName(ConstantSettings.SrsSnapshotFilenameSuffix, episodeIndex + Settings.Instance.EpisodeStartNumber,
+      string suffixStr = name.createName(ConstantSettings.SrsSnapshotFilenameSuffix, Settings.Instance.EpisodeNumber(episodeIndex),
         progressCount, startTime, endTime, comb.Subs1.Text, comb.Subs2.Text);
 
       return $"{prefixStr}{nameStr}{suffixStr}";
@@ -450,13 +454,13 @@ namespace subs2srs
       TimeSpan endTime = comb.Subs1.EndTime;
       string extension = UtilsAnimatedSnapshot.Extension(Settings.Instance.AnimatedSnapshots.Format);
 
-      string prefixStr = name.createName(ConstantSettings.SrsSnapshotFilenamePrefix, episodeIndex + Settings.Instance.EpisodeStartNumber,
+      string prefixStr = name.createName(ConstantSettings.SrsSnapshotFilenamePrefix, Settings.Instance.EpisodeNumber(episodeIndex),
         progressCount, startTime, endTime, comb.Subs1.Text, comb.Subs2.Text);
 
-      string nameStr = name.createName(ConstantSettings.AnimatedSnapshotFilenameFormat, episodeIndex + Settings.Instance.EpisodeStartNumber,
+      string nameStr = name.createName(ConstantSettings.AnimatedSnapshotFilenameFormat, Settings.Instance.EpisodeNumber(episodeIndex),
         progressCount, startTime, endTime, comb.Subs1.Text, comb.Subs2.Text);
 
-      string suffixStr = name.createName(ConstantSettings.SrsSnapshotFilenameSuffix, episodeIndex + Settings.Instance.EpisodeStartNumber,
+      string suffixStr = name.createName(ConstantSettings.SrsSnapshotFilenameSuffix, Settings.Instance.EpisodeNumber(episodeIndex),
         progressCount, startTime, endTime, comb.Subs1.Text, comb.Subs2.Text);
 
       return $"{prefixStr}{nameStr}{extension}{suffixStr}";
@@ -490,13 +494,13 @@ namespace subs2srs
         videoExtension = ".mp4";
       }
 
-      string prefixStr = name.createName(ConstantSettings.SrsVideoFilenamePrefix, episodeIndex + Settings.Instance.EpisodeStartNumber,
+      string prefixStr = name.createName(ConstantSettings.SrsVideoFilenamePrefix, Settings.Instance.EpisodeNumber(episodeIndex),
         progressCount, startTime, endTime, comb.Subs1.Text, comb.Subs2.Text);
 
-      string nameStr = name.createName(ConstantSettings.VideoFilenameFormat, episodeIndex + Settings.Instance.EpisodeStartNumber,
+      string nameStr = name.createName(ConstantSettings.VideoFilenameFormat, Settings.Instance.EpisodeNumber(episodeIndex),
         progressCount, startTime, endTime, comb.Subs1.Text, comb.Subs2.Text);
 
-      string suffixStr = name.createName(ConstantSettings.SrsVideoFilenameSuffix, episodeIndex + Settings.Instance.EpisodeStartNumber,
+      string suffixStr = name.createName(ConstantSettings.SrsVideoFilenameSuffix, Settings.Instance.EpisodeNumber(episodeIndex),
         progressCount, startTime, endTime, comb.Subs1.Text, comb.Subs2.Text);
 
       return $"{prefixStr}{nameStr}{videoExtension}{suffixStr}";
@@ -511,7 +515,7 @@ namespace subs2srs
       TimeSpan startTime = comb.Subs1.StartTime;
       TimeSpan endTime = comb.Subs1.EndTime;
 
-      return name.createName(ConstantSettings.SrsSubs1Format, episodeIndex + Settings.Instance.EpisodeStartNumber,
+      return name.createName(ConstantSettings.SrsSubs1Format, Settings.Instance.EpisodeNumber(episodeIndex),
         progressCount, startTime, endTime, comb.Subs1.Text, comb.Subs2.Text);
     }
 
@@ -524,7 +528,7 @@ namespace subs2srs
       TimeSpan startTime = comb.Subs1.StartTime;
       TimeSpan endTime = comb.Subs1.EndTime;
 
-      return name.createName(ConstantSettings.SrsSubs2Format, episodeIndex + Settings.Instance.EpisodeStartNumber,
+      return name.createName(ConstantSettings.SrsSubs2Format, Settings.Instance.EpisodeNumber(episodeIndex),
         progressCount, startTime, endTime, comb.Subs1.Text, comb.Subs2.Text);
     }
   }

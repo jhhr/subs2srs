@@ -8,6 +8,7 @@ on:
       - 'subs2srs.Tests/**'
       - 'subs2srs.UiTests/**'
       - 'subs2srs.Eval/**'
+      - 'subs2srs.Cli/**'
       - 'dist/**'
       - 'Makefile'
       - '.github/workflows/ci.yml'
@@ -17,6 +18,7 @@ on:
       - 'subs2srs.Tests/**'
       - 'subs2srs.UiTests/**'
       - 'subs2srs.Eval/**'
+      - 'subs2srs.Cli/**'
       - 'dist/**'
       - 'Makefile'
       - '.github/workflows/ci.yml'
@@ -36,14 +38,15 @@ jobs:
           dotnet-version: '10.0.x'
           cache: true
           cache-dependency-path: '**/packages.lock.json'
-      - name: Install GTK4, Xvfb, fonts, ffmpeg
+      - name: Install GTK4, Xvfb, fonts, ffmpeg, MKVToolNix
         run: |
           sudo apt-get update
-          sudo apt-get install -y --no-install-recommends libgtk-4-1 xvfb fonts-dejavu-core ffmpeg
+          sudo apt-get install -y --no-install-recommends libgtk-4-1 xvfb fonts-dejavu-core ffmpeg mkvtoolnix
       - name: Restore (locked)
         run: |
           dotnet restore subs2srs/subs2srs.csproj --locked-mode
           dotnet restore subs2srs.Eval/subs2srs.Eval.csproj --locked-mode
+          dotnet restore subs2srs.Cli/subs2srs.Cli.csproj --locked-mode
           dotnet restore subs2srs.Tests/subs2srs.Tests.csproj --locked-mode
           dotnet restore subs2srs.UiTests/subs2srs.UiTests.csproj --locked-mode
       - run: dotnet build subs2srs/subs2srs.csproj -c Release --no-restore
@@ -97,10 +100,15 @@ jobs:
           "GSETTINGS_SCHEMA_DIR=$root\ucrt64\share\glib-2.0\schemas" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
       - name: Install ffmpeg
         run: choco install ffmpeg -y --no-progress
+      # Into Program Files\MKVToolNix, where subs2srs looks after PATH (the installer adds
+      # nothing to PATH), so the real-mkvmerge tests run here too.
+      - name: Install MKVToolNix
+        run: choco install mkvtoolnix -y --no-progress
       - name: Restore (locked)
         run: |
           dotnet restore subs2srs/subs2srs.csproj --locked-mode
           dotnet restore subs2srs.Eval/subs2srs.Eval.csproj --locked-mode
+          dotnet restore subs2srs.Cli/subs2srs.Cli.csproj --locked-mode
           dotnet restore subs2srs.Tests/subs2srs.Tests.csproj --locked-mode
           dotnet restore subs2srs.UiTests/subs2srs.UiTests.csproj --locked-mode
       - run: dotnet build subs2srs/subs2srs.csproj -c Release --no-restore

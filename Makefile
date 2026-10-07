@@ -11,14 +11,21 @@ TESTPROJ  = subs2srs.Tests/subs2srs.Tests.csproj
 
 UITESTPROJ = subs2srs.UiTests/subs2srs.UiTests.csproj
 EVALPROJ  = subs2srs.Eval/subs2srs.Eval.csproj
+CLIPROJ   = subs2srs.Cli/subs2srs.Cli.csproj
+CLIPUBLISH = subs2srs.Cli/bin/Release/net10.0/publish
 WINDIR    = out/win-x64
 MSYS2     ?= C:/msys64
 PWSH      ?= pwsh   # use PWSH=powershell on a machine without PowerShell 7
 
 .PHONY: build test test-ui eval publish-windows install uninstall clean
 
+# subs2srs-cli goes into the app's folder (install, and the Windows bundle). The files both
+# publish (subs2srs.dll, the app's apphost, .deps.json and .runtimeconfig.json, the packages)
+# come out byte-identical. In install and publish-windows the CLI's copy goes second: it
+# references the app, so its package set covers both.
 build:
 	dotnet publish $(PROJ) -c Release --no-self-contained
+	dotnet publish $(CLIPROJ) -c Release --no-self-contained
 
 test:
 	dotnet test $(TESTPROJ) -c Release
@@ -35,19 +42,23 @@ eval:
 # Run from PowerShell/Git Bash on Windows with mingw-w64-ucrt-x86_64-{gtk4,ntldd} installed.
 publish-windows:
 	dotnet publish $(PROJ) -c Release -r win-x64 --self-contained true -o $(WINDIR)
+	dotnet publish $(CLIPROJ) -c Release -r win-x64 --self-contained true -o $(WINDIR)
 	$(PWSH) -NoProfile -File dist/windows/bundle-gtk.ps1 -Msys2Root "$(MSYS2)" -PublishDir "$(WINDIR)"
 	$(PWSH) -NoProfile -File dist/windows/smoke.ps1 -PublishDir "$(WINDIR)"
 
 install: build
 	install -dm755 "$(LIBDIR)"
 	cp -r $(PUBLISH)/* "$(LIBDIR)/"
+	cp -r $(CLIPUBLISH)/* "$(LIBDIR)/"
 	install -Dm755 dist/subs2srs.sh "$(BINDIR)/subs2srs"
+	install -Dm755 dist/subs2srs-cli.sh "$(BINDIR)/subs2srs-cli"
 	install -Dm644 dist/subs2srs.desktop "$(APPDIR)/subs2srs.desktop"
 	install -Dm644 LICENSE "$(LICDIR)/LICENSE"
 
 uninstall:
 	rm -rf "$(DESTDIR)$(PREFIX)/lib/$(PKGNAME)"
 	rm -f  "$(BINDIR)/subs2srs"
+	rm -f  "$(BINDIR)/subs2srs-cli"
 	rm -f  "$(APPDIR)/subs2srs.desktop"
 	rm -rf "$(LICDIR)"
 
@@ -57,4 +68,5 @@ clean:
 	rm -rf subs2srs.Tests/bin subs2srs.Tests/obj
 	rm -rf subs2srs.UiTests/bin subs2srs.UiTests/obj
 	rm -rf subs2srs.Eval/bin subs2srs.Eval/obj
+	rm -rf subs2srs.Cli/bin subs2srs.Cli/obj
 	rm -rf out

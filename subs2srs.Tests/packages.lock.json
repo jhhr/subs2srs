@@ -219,6 +219,12 @@
           "TagLibSharp": "[2.3.0, )"
         }
       },
+      "subs2srs-cli": {
+        "type": "Project",
+        "dependencies": {
+          "subs2srs": "[0.2.9, )"
+        }
+      },
       "subs2srs.eval": {
         "type": "Project",
         "dependencies": {

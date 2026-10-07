@@ -1,0 +1,24 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- subs2srs-cli: card generation without the GUI (the season batch). A console exe on every
+       platform, Windows included: the GUI exe is a WinExe there and has no console to write to. -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <!-- As the app: the Windows bundle publishes both apphosts for win-x64 from locked restores. -->
+    <RuntimeIdentifiers>linux-x64;win-x64</RuntimeIdentifiers>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <IsPackable>false</IsPackable>
+    <RootNamespace>subs2srs.Cli</RootNamespace>
+    <AssemblyName>subs2srs-cli</AssemblyName>
+    <RestorePackagesWithLockFile>true</RestorePackagesWithLockFile>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="subs2srs.Tests" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="../subs2srs/subs2srs.csproj" />
+  </ItemGroup>
+</Project>

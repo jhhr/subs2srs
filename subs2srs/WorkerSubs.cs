@@ -93,7 +93,7 @@ namespace subs2srs
 
         // Parse Subs1
         subs1Parser = UtilsSubs.getSubtitleParserType(workerVars, curSub1File, streamSubs1,
-          epIdx + Settings.Instance.EpisodeStartNumber, 1, Encoding.GetEncoding(Settings.Instance.Subs[0].Encoding));
+          Settings.Instance.EpisodeNumber(epIdx), 1, Encoding.GetEncoding(Settings.Instance.Subs[0].Encoding));
 
         Logger.Instance.writeFileToLog(curSub1File, Encoding.GetEncoding(Settings.Instance.Subs[0].Encoding));
 
@@ -114,7 +114,7 @@ namespace subs2srs
         // Apply Subs1 time shift (per-episode cascading rules or global)
         if (Settings.Instance.TimeShiftEnabled)
         {
-          int episodeNumber = epIdx + Settings.Instance.EpisodeStartNumber;
+          int episodeNumber = Settings.Instance.EpisodeNumber(epIdx);
           int shift = Settings.Instance.Subs[0].GetEffectiveTimeShift(episodeNumber);
           foreach (InfoLine line in subs1LineInfos)
           {
@@ -127,7 +127,7 @@ namespace subs2srs
         {
           curSub2File = Settings.Instance.Subs[1].Files[epIdx];
           subs2Parser = UtilsSubs.getSubtitleParserType(workerVars, curSub2File, streamSubs2,
-            epIdx + Settings.Instance.EpisodeStartNumber, 2, Encoding.GetEncoding(Settings.Instance.Subs[1].Encoding));
+            Settings.Instance.EpisodeNumber(epIdx), 2, Encoding.GetEncoding(Settings.Instance.Subs[1].Encoding));
 
           Logger.Instance.writeFileToLog(curSub2File, Encoding.GetEncoding(Settings.Instance.Subs[1].Encoding));
 
@@ -148,7 +148,7 @@ namespace subs2srs
           // Apply Subs2 time shift (per-episode cascading rules or global)
           if (Settings.Instance.TimeShiftEnabled)
           {
-            int episodeNumber = epIdx + Settings.Instance.EpisodeStartNumber;
+            int episodeNumber = Settings.Instance.EpisodeNumber(epIdx);
             int shift = Settings.Instance.Subs[1].GetEffectiveTimeShift(episodeNumber);
             foreach (InfoLine line in subs2LineInfos)
             {
@@ -982,7 +982,7 @@ namespace subs2srs
         bool[] repaired = SnippetGrouping.Repair(lines, kept, SnippetGrouping.ProjectToKept(joins, kept), limits, log);
         foreach (string message in log)
         {
-          Logger.Instance.info($"Snippet grouping (episode {epIdx + Settings.Instance.EpisodeStartNumber}): {message}");
+          Logger.Instance.info($"Snippet grouping (episode {Settings.Instance.EpisodeNumber(epIdx)}): {message}");
         }
         SnippetGrouping.ApplyKeptJoins(joins, kept, repaired);
 
@@ -991,7 +991,7 @@ namespace subs2srs
 
         int snippets = 0;
         foreach (InfoCombined card in cards) if (card.IsSnippet) snippets++;
-        Logger.Instance.info($"Snippet grouping (episode {epIdx + Settings.Instance.EpisodeStartNumber}): {lines.Count} lines -> {cards.Count} cards, {snippets} multi-line");
+        Logger.Instance.info($"Snippet grouping (episode {Settings.Instance.EpisodeNumber(epIdx)}): {lines.Count} lines -> {cards.Count} cards, {snippets} multi-line");
 
         result.Add(cards);
 
@@ -1075,7 +1075,7 @@ namespace subs2srs
         }
         catch (ProviderException ex)
         {
-          Logger.Instance.info($"AI grouping (episode {epIdx + Settings.Instance.EpisodeStartNumber}) failed, the rule-based grouper will be used: {ex.Message}");
+          Logger.Instance.info($"AI grouping (episode {Settings.Instance.EpisodeNumber(epIdx)}) failed, the rule-based grouper will be used: {ex.Message}");
         }
 
         if (dialogProgress.Cancel) return null;

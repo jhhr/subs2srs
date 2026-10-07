@@ -1,0 +1,177 @@
+{
+  "attachments": [],
+  "chapters": [],
+  "container": {
+    "properties": {
+      "container_type": 17,
+      "date_local": "2026-10-04T19:51:26+00:00",
+      "date_utc": "2026-10-04T19:51:26Z",
+      "duration": 15300000000,
+      "is_providing_timestamps": true,
+      "muxing_application": "libebml v1.4.5 + libmatroska v1.7.1",
+      "segment_uid": "fb75de0f9e4a40137e2fe562a996044e",
+      "timestamp_scale": 1000000,
+      "writing_application": "mkvmerge v82.0 ('I'm The President') 64-bit"
+    },
+    "recognized": true,
+    "supported": true,
+    "type": "Matroska"
+  },
+  "errors": [],
+  "file_name": "multi.mkv",
+  "global_tags": [
+    {
+      "num_entries": 1
+    }
+  ],
+  "identification_format_version": 19,
+  "track_tags": [
+    {
+      "num_entries": 1,
+      "track_id": 0
+    },
+    {
+      "num_entries": 1,
+      "track_id": 1
+    }
+  ],
+  "tracks": [
+    {
+      "codec": "MPEG-4p2",
+      "id": 0,
+      "properties": {
+        "codec_id": "V_MPEG4/ISO/ASP",
+        "codec_private_data": "000001b001000001b58913000001000000012000c48d88002d0204049443000001b24c61766336302e33312e313032",
+        "codec_private_length": 47,
+        "color_range": 1,
+        "default_duration": 200000000,
+        "default_track": false,
+        "display_dimensions": "64x36",
+        "display_unit": 0,
+        "enabled_track": true,
+        "forced_track": false,
+        "language": "und",
+        "language_ietf": "und",
+        "minimum_timestamp": 0,
+        "num_index_entries": 1,
+        "number": 1,
+        "pixel_dimensions": "64x36",
+        "tag_encoder": "Lavc60.31.102 mpeg4",
+        "uid": 17402952514879620027
+      },
+      "type": "video"
+    },
+    {
+      "codec": "AAC",
+      "id": 1,
+      "properties": {
+        "audio_bits_per_sample": 32,
+        "audio_channels": 1,
+        "audio_sampling_frequency": 8000,
+        "codec_delay": 128000000,
+        "codec_id": "A_AAC",
+        "codec_private_data": "158856e500",
+        "codec_private_length": 5,
+        "default_duration": 128000000,
+        "default_track": false,
+        "enabled_track": true,
+        "forced_track": false,
+        "language": "und",
+        "language_ietf": "und",
+        "minimum_timestamp": 0,
+        "num_index_entries": 0,
+        "number": 2,
+        "tag_encoder": "Lavc60.31.102 aac",
+        "uid": 18272191993974819811
+      },
+      "type": "audio"
+    },
+    {
+      "codec": "SubStationAlpha",
+      "id": 2,
+      "properties": {
+        "codec_id": "S_TEXT/ASS",
+        "codec_private_data": "5b53637269707420496e666f5d0d0a536372697074547970653a2076342e30302b0d0a506c6179526573583a203634300d0a506c6179526573593a203336300d0a0d0a5b56342b205374796c65735d0d0a466f726d61743a204e616d652c20466f6e746e616d652c20466f6e7473697a652c205072696d617279436f6c6f75722c205365636f6e64617279436f6c6f75722c204f75746c696e65436f6c6f75722c204261636b436f6c6f75722c20426f6c642c204974616c69632c20556e6465726c696e652c20537472696b654f75742c205363616c65582c205363616c65592c2053706163696e672c20416e676c652c20426f726465725374796c652c204f75746c696e652c20536861646f772c20416c69676e6d656e742c204d617267696e4c2c204d617267696e522c204d617267696e562c20456e636f64696e670d0a5374796c653a2044656661756c742c417269616c2c32302c264830304646464646462c264830303030303046462c264830303030303030302c264830303030303030302c302c302c302c302c3130302c3130302c302c302c312c322c302c322c31302c31302c31302c310d0a0d0a5b4576656e74735d0d0a466f726d61743a204c617965722c2053746172742c20456e642c205374796c652c204e616d652c204d617267696e4c2c204d617267696e522c204d617267696e562c204566666563742c20546578740d0a0d0a",
+        "codec_private_length": 523,
+        "default_track": true,
+        "enabled_track": true,
+        "encoding": "UTF-8",
+        "forced_track": false,
+        "language": "eng",
+        "language_ietf": "en",
+        "minimum_timestamp": 500000000,
+        "num_index_entries": 6,
+        "number": 3,
+        "text_subtitles": true,
+        "track_name": "English",
+        "uid": 4712561927309882755
+      },
+      "type": "subtitles"
+    },
+    {
+      "codec": "SubRip/SRT",
+      "id": 3,
+      "properties": {
+        "codec_id": "S_TEXT/UTF8",
+        "codec_private_length": 0,
+        "default_track": true,
+        "enabled_track": true,
+        "encoding": "UTF-8",
+        "forced_track": false,
+        "language": "eng",
+        "language_ietf": "en",
+        "minimum_timestamp": 500000000,
+        "num_index_entries": 9,
+        "number": 4,
+        "text_subtitles": true,
+        "track_name": "English (full)",
+        "uid": 11613677003851783747
+      },
+      "type": "subtitles"
+    },
+    {
+      "codec": "SubStationAlpha",
+      "id": 4,
+      "properties": {
+        "codec_id": "S_TEXT/ASS",
+        "codec_private_data": "5b53637269707420496e666f5d0d0a536372697074547970653a2076342e30302b0d0a506c6179526573583a203634300d0a506c6179526573593a203336300d0a0d0a5b56342b205374796c65735d0d0a466f726d61743a204e616d652c20466f6e746e616d652c20466f6e7473697a652c205072696d617279436f6c6f75722c205365636f6e64617279436f6c6f75722c204f75746c696e65436f6c6f75722c204261636b436f6c6f75722c20426f6c642c204974616c69632c20556e6465726c696e652c20537472696b654f75742c205363616c65582c205363616c65592c2053706163696e672c20416e676c652c20426f726465725374796c652c204f75746c696e652c20536861646f772c20416c69676e6d656e742c204d617267696e4c2c204d617267696e522c204d617267696e562c20456e636f64696e670d0a5374796c653a2044656661756c742c417269616c2c32302c264830304646464646462c264830303030303046462c264830303030303030302c264830303030303030302c302c302c302c302c3130302c3130302c302c302c312c322c302c322c31302c31302c31302c310d0a0d0a5b4576656e74735d0d0a466f726d61743a204c617965722c2053746172742c20456e642c205374796c652c204e616d652c204d617267696e4c2c204d617267696e522c204d617267696e562c204566666563742c20546578740d0a0d0a",
+        "codec_private_length": 523,
+        "default_track": true,
+        "enabled_track": true,
+        "encoding": "UTF-8",
+        "forced_track": true,
+        "language": "eng",
+        "language_ietf": "en",
+        "minimum_timestamp": 500000000,
+        "num_index_entries": 12,
+        "number": 5,
+        "text_subtitles": true,
+        "track_name": "Signs",
+        "uid": 15076225931219730850
+      },
+      "type": "subtitles"
+    },
+    {
+      "codec": "SubRip/SRT",
+      "id": 5,
+      "properties": {
+        "codec_id": "S_TEXT/UTF8",
+        "codec_private_length": 0,
+        "default_track": true,
+        "enabled_track": true,
+        "encoding": "UTF-8",
+        "forced_track": false,
+        "language": "jpn",
+        "language_ietf": "ja",
+        "minimum_timestamp": 500000000,
+        "num_index_entries": 15,
+        "number": 6,
+        "text_subtitles": true,
+        "track_name": "Japanese",
+        "uid": 14433945086123271439
+      },
+      "type": "subtitles"
+    }
+  ],
+  "warnings": []
+}

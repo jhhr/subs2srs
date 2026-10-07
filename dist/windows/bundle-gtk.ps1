@@ -22,10 +22,12 @@
   mingw-w64-ucrt-x86_64-ntldd installed.
 
 .PARAMETER PublishDir
-  Directory containing subs2srs.exe (output of dotnet publish -r win-x64).
+  Directory containing subs2srs.exe (output of dotnet publish -r win-x64). subs2srs-cli.exe,
+  published into the same directory, loads no GTK; nothing here depends on it.
 
 .EXAMPLE
   dotnet publish subs2srs/subs2srs.csproj -c Release -r win-x64 --self-contained true -o out\win-x64
+  dotnet publish subs2srs.Cli/subs2srs.Cli.csproj -c Release -r win-x64 --self-contained true -o out\win-x64
   pwsh dist/windows/bundle-gtk.ps1 -Msys2Root C:\msys64 -PublishDir out\win-x64
 #>
 [CmdletBinding()]

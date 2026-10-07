@@ -79,6 +79,47 @@ namespace subs2srs.UiTests.Tests
             await scope.CloseAsync(win);
         }
 
+        /// <summary>
+        /// Pins the <c>Files</c> arrays that Go and the Preview work on: the patterns typed in
+        /// the window expanded, unsupported and hidden files dropped, every array cut to
+        /// End # - Start # + 1. <c>ProjectFilesTests</c> checks the command line's path against
+        /// the same <see cref="PatternSet"/>.
+        /// </summary>
+        [Fact]
+        public async Task SaveSettings_ExpandsThePatterns_AndCutsToTheEndNumber()
+        {
+            using var scope = new UiTestScope(_gtk);
+            var set = PatternSet.Create(scope.TempDir);
+
+            var win = await scope.OpenMainWindowAsync();
+
+            await _gtk.RunOnGtkAsync(async () =>
+            {
+                var streamsBefore = win._audioStreamModel;
+                win._txtSubs1.SetText(set.Subs1Pattern);
+                win._txtSubs2.SetText(set.Subs2Pattern);
+                win._txtVideo.SetText(set.VideoPattern);
+                win._txtAudioFile.SetText(set.AudioPattern);
+                win._spinEpisodeStart.Value = PatternSet.Start;
+                win._spinEpisodeEnd.Value = PatternSet.End;
+                // A video pattern starts a probe of the first video's audio streams, which
+                // replaces the stream list; let it finish while the window is open.
+                await Pump.WaitUntilAsync(() => !ReferenceEquals(win._audioStreamModel, streamsBefore),
+                    what: "audio stream probe");
+                win.SaveSettings();
+            });
+
+            var s = Settings.Instance;
+            Assert.Equal(set.Subs1, s.Subs[0].Files);
+            Assert.Equal(set.Subs2, s.Subs[1].Files);
+            Assert.Equal(set.Video, s.VideoClips.Files);
+            Assert.Equal(set.Audio, s.AudioClips.Files);
+            Assert.Equal(PatternSet.Start, s.EpisodeStartNumber);
+            Assert.Equal(PatternSet.End, s.EpisodeEndNumber);
+
+            await scope.CloseAsync(win);
+        }
+
         [Fact]
         public async Task Go_WithEmptyDeckName_ShowsOneErrorAndWritesNothing()
         {
@@ -104,6 +145,45 @@ namespace subs2srs.UiTests.Tests
             Assert.Empty(Directory.GetFileSystemEntries(scope.OutputDir));
 
             await scope.CloseAsync(win);
+        }
+
+        /// <summary>
+        /// The checks before starting (<see cref="GoChecks"/>) refuse an output directory that
+        /// cannot be created, naming it, before the run starts. Without them the run started and
+        /// failed with a bare "Cannot write to output directory." and the bar read "Finished!".
+        /// </summary>
+        [Fact]
+        public async Task Go_WithAnOutputDirUnderAFile_SaysWhy_AndDoesNotStart()
+        {
+            using var scope = new UiTestScope(_gtk);
+            scope.ExpectErrors();
+            if (!FfmpegProbe.IsAvailable)
+                return; // Go is disabled without ffmpeg; nothing to validate
+
+            string file = Path.Combine(scope.TempDir, "a file");
+            File.WriteAllText(file, "");
+            string outputDir = Path.Combine(file, "out");
+            var win = await scope.OpenMainWindowAsync();
+            scope.Msgs.Clear();
+
+            string before = "";
+            await _gtk.RunOnGtkAsync(async () =>
+            {
+                win._txtSubs1.SetText(Path.Combine(scope.TempDir, "nonexistent.srt"));
+                win._txtOutputDir.SetText(outputDir);
+                win._txtDeckName.SetText("Deck");
+                before = win._progressBar.GetText() ?? "";
+                await win.GoAsync();
+            });
+
+            var ui = _gtk.RunOnGtk(() => (Go: win._btnGo.GetSensitive(), Text: win._progressBar.GetText() ?? ""));
+            await scope.CloseAsync(win); // first: a failed assertion would read as a leaked window
+
+            var errors = scope.Msgs.Errors;
+            Assert.Single(errors);
+            Assert.StartsWith($"Cannot write to output directory \"{outputDir}\": ", errors[0]);
+            Assert.True(ui.Go, "Go stays enabled");
+            Assert.Equal(before, ui.Text);
         }
     }
 }

@@ -2,6 +2,20 @@
 
 ## Unreleased
 
+**Command line** (`subs2srs-cli`, new; see the README):
+- `subs2srs-cli go --project show.s2s.json --season <dir>` makes the cards of a whole season without the GUI, with the settings of a project saved in the GUI: one run over every episode, one import file, and a table on stdout of what became of each episode. The season folder holds the `*.mkv` files and, in `s2s/`, each video's `<video name>.ja.<ext>` (Subs1) and `<video name>.en.<ext>` (Subs2). An episode without exactly one of each is skipped, and the others keep their episode numbers in tags, sequence markers and every media name, padded as a run over the whole season pads them, so names do not change between runs. Without `--season` the project's own patterns are used, and unequal file counts are refused. `--dry-run` lists the episodes and the checks before starting and makes nothing.
+- `subs2srs-cli season <dir> --project show.s2s.json` does the whole season from the videos and one Japanese subtitle file per video, named like it (`Show - 01.srt`, `Show - 01.ja.srt`). For each episode it picks the English text track with `mkvmerge -J` (English, ASS, SSA or SRT, not forced, the most events; `--track ID` takes one track from every video), extracts it with `mkvextract` to `s2s/<video name>.en.<ext>`, and retimes the Japanese file to it with subsretimer (`--auto`, the project's Subs1 encoding, `--min-match F` when given) into `s2s/<video name>.ja.<ext>`; then, in the same run, it makes the cards of the episodes with a retime as `go --season` does, the others skipped under their own numbers. One table: Episode, EN track, Retime (`2 segments, 97% of EN covered`, `below --min-match (66%)`, `no JP file named like the video`, …), AI, Status, Cards, with a note when the picked track differs between episodes. For each pair subsretimer did not save, the table is followed by the command that opens subsretimer's editor on that pair; its Save writes the file the next run keeps. A re-run keeps the extracted files and every retime newer than both its files (an editor fix included) and does the rest; `--force` does everything again. `--only extract|retime|go` runs one stage; `--dry-run` shows the track, the JP file and what would be kept or done, and changes nothing. The EN files are read as UTF-8, as mkvextract writes them.
+- `--deck NAME` (`go` and `season`) makes the cards under another deck name than the project's: the import file, the media folder, the media names and the tags.
+- Exit codes: `0` every episode done, `3` some skipped (the table says why), `1` an error before any work or a failed step (whose partly written TSV is deleted), `130` cancelled.
+- With snippet mode AI, the model groups every episode first, as in the Preview, with cached answers reused. An episode it cannot group is skipped rather than grouped by the rules. Once the Claude usage limit is reached, the remaining episodes without a cached answer are skipped without asking, so the same command run after the limit resets fills the gaps. `--grouping rules|off` runs without the model.
+- Reads the GUI's `preferences.json` and never writes it (`--prefs FILE`, `--no-prefs`). Progress and messages go to stderr; redirected output is UTF-8.
+- Installed with the app: `make install` adds `/usr/bin/subs2srs-cli`, and the Windows zip has `subs2srs-cli.exe` next to `subs2srs.exe`.
+- The GUI numbers episodes as before (*Episode Start #* plus the position); only the command line sets explicit numbers.
+
+**Go** (main window):
+- Go runs the checks before starting that `subs2srs-cli` shares, and shows every error in one message: an output directory that cannot be created or written to, ffmpeg not found, no encoder for animated snapshots while they are on, and `claude` not found when AI grouping will run on Go with a `terminal-` model. The audio-stream question is asked as before.
+- Go now refuses when AI grouping would run on Go without `claude`; it used to group every uncached episode by the rules without a word.
+
 **Grouping evaluation** (developers):
 - New console project `subs2srs.Eval` (not shipped; `make eval ARGS="..."` or `dotnet run --project subs2srs.Eval -- --set <dir> [--model <model> | --rules]`) scores a grouper against the validation files written by *Save as validation*: precision, recall and F1 per boundary, exact-match rate per snippet with an over-merged / under-merged breakdown, per file and summed over the tuning set, the hold-out set (files under a `holdout/` folder, or `--holdout <dir>`) and all files, plus tokens and cost. Model runs go through the app's own chunker, prompt, provider layer, answer repair and cache, so a run costs nothing the second time; `--prompt` appends extra instructions for prompt iteration, `--estimate` and `--max-cost` keep spending in check, `--compare <run>` diffs two runs boundary by boundary with the line texts, and the rule knobs (`--rules-gap`, `--rules-cues`, ...) tune the zero-cost baseline. Reports: a table on stdout and `<run>.run.json`, `.csv`, `.md`.
 - A no-network regression test scores the cached answers of a configured model against hold-out fixtures in `subs2srs.Tests/Fixtures/eval/` and skips until they exist (see the README there).
@@ -13,7 +27,8 @@
 - **Preview**: with mode AI the pass runs when the preview opens. The progress bar shows the token and cost estimate before the call and the per-chunk progress with a time estimate during it; a new *Cancel* button stops it. The status line then shows the tokens used and the approximate cost, or the provider's error text when the call failed (the rules are used instead). *Regroup (AI)* asks the model again, ignoring the cache. The model's short reason for each group is the tooltip of the *Group* column. *Save as validation* records `"producer": "ai"`, the model and the prompt version in the proposal block.
 - **Go**: the preview's grouping is reused as before. Without one, Go uses the rules and says so in the log, unless the *AI Grouping On Go* preference is on, in which case an "AI grouping" step runs first with the same progress reporting.
 - The cost estimate uses the standard per-token prices from the official pricing pages of Anthropic, OpenAI and Google (read 2026-09-14; the source URLs are listed above the table in `AiPricing`). Only models listed there are priced; a model ID matches its entry exactly or with a dated or variant suffix, so an unlisted or retired model shows a token count without a price.
-- The model sees the first subtitle track only (time, actor, text). The second track is not sent: subs2srs has already synced it to subs1, so the translation follows the grouping in the card. This is prompt version 2, so answers cached by an earlier build are asked again once.
+- The model sees the first subtitle track only (time, actor, text). The second track is not sent: subs2srs has already synced it to subs1, so the translation follows the grouping in the card.
+- The model is asked to keep an exchange between characters on one card (a question and its answer, a remark and the reaction, a greeting and the conversation it opens) and to avoid cards that hold only greetings, names or interjections, which it attaches to the lines that carry the content. A line that is a complete thought stays a card of its own. This is prompt version 3, so answers cached by an earlier build are asked again once.
 - Answers are cached per episode (keyed by the exact lines the model saw, the limits, the model, the chunking and the prompt version), so Preview → Go and repeated runs cost nothing. Anthropic answers are streamed and may use up to 32,000 output tokens, thinking included, or the model's own output cap when that is lower, so a long chunk is no longer cut off at 8,192 tokens and the connection stays active while the model thinks. Requests are sent as fast and as concurrently as possible and paced only by the provider's answers: a rate-limit rejection (429, Anthropic 529) pauses every request to that model for as long as the provider says (`Retry-After`, Anthropic's `*-reset` headers, OpenAI's `x-ratelimit-reset-*`, Gemini's `RetryInfo`), a success whose headers show a spent limit bucket pauses them before the next rejection, timeouts and server errors back off per request; a wait longer than *AI Max Retry Wait Seconds* gives up, as do spent quotas (OpenAI `insufficient_quota`, Gemini per-day quota). A failed chunk falls back to the rules; malformed answers (overlapping or out-of-range groups) are repaired and logged, and the length limit is enforced on every proposal.
 
 **Animated snapshots** (Snapshots tab):
@@ -35,7 +50,8 @@
 
 **Windows support**:
 - subs2srs now runs on Windows 10/11. Releases attach a self-contained portable zip (`subs2srs-<ver>-win-x64.zip`) with .NET and the GTK 4 runtime bundled from MSYS2 UCRT64 (`dist/windows/bundle-gtk.ps1`, `.github/workflows/release.yml`). ffmpeg is not bundled.
-- New preference **Tools Directory** (Misc): a folder searched before `PATH` for ffmpeg, ffprobe, ffplay, mkvinfo, mkvextract and mp3gain. Tool lookup is `PATHEXT`-aware and no longer mutates the process `PATH`.
+- New preference **Tools Directory** (Misc): a folder searched before `PATH` for ffmpeg, ffprobe, ffplay, mkvinfo, mkvextract, mkvmerge and mp3gain. Tool lookup is `PATHEXT`-aware and no longer mutates the process `PATH`.
+- mkvmerge, mkvextract and mkvinfo are also found in `%ProgramFiles%\MKVToolNix` (and `%ProgramFiles(x86)%\MKVToolNix`), where the MKVToolNix installer puts them without adding them to `PATH`. This also fixes the MKV dialogs, which did not find them there.
 - Startup check: if ffmpeg cannot be found, one clear message with install instructions is shown and Go is disabled.
 - All GTK P/Invokes in `GtkColumnViewHelper` replaced with managed gir.core calls (the `"gtk-4"` library name only resolved on Linux).
 - External tools are launched with UTF-8 output decoding, `-nostdin` for ffmpeg, and never through the shell, so non-ASCII paths work and no console windows flash.
@@ -45,6 +61,7 @@
 **Subs Re-Timer** (Tools tab):
 - New entry that launches the external [subsretimer](https://github.com/jhhr/subsretimer) tool with the main window's Subs1/Subs2 files, lets you choose which file is the reference and whether to auto-align headlessly, and offers to use the re-timed file in the main window afterwards. The button is disabled with a hint when `subsretimer` is not on `PATH` or in the *Tools Directory*.
 - Preferences `SubsRetimerReferenceIsSubs2` and `SubsRetimerAuto` remember the launcher's last choices. The unused `PathSubsReTimerFull` constant from the Mono port is replaced by `PathSubsRetimerExeFull`.
+- Closing the window stops a running auto-align; an open editor is left running, so no unsaved work there is lost. The tool's output is read as UTF-8, so a saved path with Japanese characters comes back intact on Windows.
 
 **Bug fixes**:
 - Choosing a legacy subtitle encoding (Shift-JIS, GBK, EUC-KR, Windows-125x, …) threw `ArgumentException`; the code-page encoding provider is now registered.
@@ -52,14 +69,18 @@
 - Temp file paths were built by string concatenation instead of `Path.Combine`.
 - Error messages for mp3gain/mkvextract failures said "ffmpeg".
 - `UtilsAudio.extractAudio` (non-progress path) passed the bitrate argument where the input file belonged.
+- `.srt` text kept every tag except `<i>`, `<b>` and `<u>`, so `<font color="...">` and the like ended up on the cards; all HTML-style tags are now removed.
 
 **Tests**:
 - New card-generation end-to-end tests in `subs2srs.Tests` (`SubsProcessorE2ETests`) that run the real pipeline against generated media; skipped when ffmpeg is absent.
 - New `subs2srs.UiTests` project: opens every window, drives the main window through a full deck generation and the Preferences dialog through OK/Cancel. Runs on Windows and under Xvfb on Linux in CI.
+- `subs2srs-cli` is tested in-process (`CliTests`, `CliAiPrePassTests`, `EpisodeListTests`), with the shared file resolution and checks (`ProjectFilesTests`, `GoChecksTests`) and explicit episode numbers through the e2e pipeline.
+- `season` is tested on generated mkv files with the real mkvmerge and mkvextract and a scripted subsretimer (`CliSeasonTests`, `MkvTracksTests`, `MkvExtractTests`, `RetimeStageTests`, `SubsRetimerLauncherTests`); those tests skip without MKVToolNix. The tests of the real subsretimer run only with `SUBSRETIMER_EXE` set, and are now reported as skipped otherwise.
 
 **Build/CI**:
-- CI now runs on Linux (Xvfb) and Windows (MSYS2 GTK); NuGet lock files added.
+- CI now runs on Linux (Xvfb) and Windows (MSYS2 GTK); NuGet lock files added. Both jobs install MKVToolNix.
 - `make test-ui`, `make publish-windows`; `depends` lists mp3gain/mkvtoolnix as optional.
+- `make build`, `make install` and `make publish-windows` build `subs2srs-cli` with the app; `smoke.ps1` also runs `subs2srs-cli.exe --version` and `go --help`. `release.yml` can be started by hand: it then builds and smoke-tests the zip as version `0.0.0-dev` and attaches it to no release (only a `v*` tag does). Its publish step now stops at the first failing command.
 
 ---
 

@@ -588,10 +588,10 @@ namespace subs2srs
             {
                 var combArray = workerVars.CombinedAll[epIdx];
                 string nameStr = name.createName(ConstantSettings.DuelingSubtitleFilenameFormat,
-                    Settings.Instance.EpisodeStartNumber + epIdx, 0, TimeSpan.Zero, TimeSpan.Zero, "", "");
+                    Settings.Instance.EpisodeNumber(epIdx), 0, TimeSpan.Zero, TimeSpan.Zero, "", "");
                 string path = IOPath.Combine(Settings.Instance.OutputDir, nameStr);
                 using var writer = new StreamWriter(path, false, Encoding.UTF8);
-                writer.WriteLine(FormatScriptInfo(Settings.Instance.EpisodeStartNumber + epIdx));
+                writer.WriteLine(FormatScriptInfo(Settings.Instance.EpisodeNumber(epIdx)));
                 writer.WriteLine(FormatStyles());
                 writer.WriteLine(FormatEventsHeader());
                 for (int lineIdx = 0; lineIdx < combArray.Count; lineIdx++)
@@ -618,14 +618,14 @@ namespace subs2srs
             {
                 var combArray = workerVars.CombinedAll[epIdx];
                 string nameStr = name.createName(ConstantSettings.DuelingQuickRefFilenameFormat,
-                    Settings.Instance.EpisodeStartNumber + epIdx, 0, TimeSpan.Zero, TimeSpan.Zero, "", "");
+                    Settings.Instance.EpisodeNumber(epIdx), 0, TimeSpan.Zero, TimeSpan.Zero, "", "");
                 string path = IOPath.Combine(Settings.Instance.OutputDir, nameStr);
                 using var writer = new StreamWriter(path, false, Encoding.UTF8);
                 for (int lineIdx = 0; lineIdx < combArray.Count; lineIdx++)
                 {
                     progressCount++;
                     var comb = combArray[lineIdx];
-                    int episode = Settings.Instance.EpisodeStartNumber + epIdx;
+                    int episode = Settings.Instance.EpisodeNumber(epIdx);
                     writer.WriteLine(FormatQuickRefPair(comb, name, episode, progressCount));
                     int pct = (int)(progressCount * 100.0 / totalLines);
                     reporter?.UpdateProgress(pct, $"Generating quick reference: line {progressCount} of {totalLines}");

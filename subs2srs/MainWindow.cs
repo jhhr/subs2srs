@@ -48,14 +48,14 @@ namespace subs2srs
         internal Gtk.Entry _txtVideo;
         internal Gtk.Entry _txtOutputDir;
         internal Gtk.Entry _txtDeckName;
-        private Gtk.SpinButton _spinEpisodeStart;
-        private Gtk.SpinButton _spinEpisodeEnd;
+        internal Gtk.SpinButton _spinEpisodeStart;
+        internal Gtk.SpinButton _spinEpisodeEnd;
         private Gtk.DropDown _comboEncodingSubs1;
         private Gtk.StringList _encModel1;
         private Gtk.DropDown _comboEncodingSubs2;
         private Gtk.StringList _encModel2;
         private Gtk.DropDown _comboAudioStream;
-        private Gtk.StringList _audioStreamModel;
+        internal Gtk.StringList _audioStreamModel;
         private Gtk.CheckButton _radioTimingSubs1;
         private Gtk.CheckButton _radioTimingSubs2;
         private Gtk.CheckButton _chkTimeShift;
@@ -77,7 +77,7 @@ namespace subs2srs
         internal Gtk.CheckButton _chkGenerateAudio;
         private Gtk.CheckButton _radioAudioFromVideo;
         private Gtk.CheckButton _radioAudioExisting;
-        private Gtk.Entry _txtAudioFile;
+        internal Gtk.Entry _txtAudioFile;
         private Gtk.DropDown _comboAudioBitrate;
         private Gtk.StringList _audioBitrateModel;
         private Gtk.DropDown _comboAudioFormat;
@@ -1146,18 +1146,11 @@ namespace subs2srs
                 Settings.Instance.Subs[0].Encoding = GetSelectedEncodingShort(_comboEncodingSubs1, _encModel1);
                 Settings.Instance.Subs[0].TimingsEnabled = _radioTimingSubs1.GetActive();
                 Settings.Instance.Subs[0].TimeShift = (int)_spinTimeShiftSubs1.Value;
-                Settings.Instance.Subs[0].Files = UtilsSubs.getSubsFiles(
-                    Settings.Instance.Subs[0].FilePattern).ToArray();
 
                 Settings.Instance.Subs[1].FilePattern = _txtSubs2.GetText().Trim();
                 Settings.Instance.Subs[1].Encoding = GetSelectedEncodingShort(_comboEncodingSubs2, _encModel2);
                 Settings.Instance.Subs[1].TimingsEnabled = _radioTimingSubs2.GetActive();
                 Settings.Instance.Subs[1].TimeShift = (int)_spinTimeShiftSubs2.Value;
-                if (Settings.Instance.Subs[1].FilePattern.Length > 0)
-                    Settings.Instance.Subs[1].Files = UtilsSubs.getSubsFiles(
-                        Settings.Instance.Subs[1].FilePattern).ToArray();
-                else
-                    Settings.Instance.Subs[1].Files = Array.Empty<string>();
 
                 Settings.Instance.TimeShiftEnabled = _chkTimeShift.GetActive();
 
@@ -1188,8 +1181,6 @@ namespace subs2srs
 
                 // Video
                 Settings.Instance.VideoClips.FilePattern = _txtVideo.GetText().Trim();
-                Settings.Instance.VideoClips.Files = UtilsCommon.getNonHiddenFiles(
-                    Settings.Instance.VideoClips.FilePattern);
 
                 // Audio stream
                 int streamIdx = (int)_comboAudioStream.GetSelected();
@@ -1213,8 +1204,6 @@ namespace subs2srs
                 Settings.Instance.AudioClips.PadEnd = (int)_spinAudioPadEnd.Value;
                 Settings.Instance.AudioClips.Normalize = _chkNormalize.GetActive();
                 Settings.Instance.AudioClips.FilePattern = _txtAudioFile.GetText().Trim();
-                Settings.Instance.AudioClips.Files = UtilsCommon.getNonHiddenFiles(
-                    Settings.Instance.AudioClips.FilePattern);
 
                 // Snapshots
                 Settings.Instance.Snapshots.Enabled = _chkGenerateSnapshots.GetActive();
@@ -1245,29 +1234,8 @@ namespace subs2srs
                 Settings.Instance.VideoClips.PadEnd = (int)_spinVideoPadEnd.Value;
                 Settings.Instance.VideoClips.IPodSupport = _chkIPod.GetActive();
 
-                // Truncate file arrays when Episode End # limits processing
-                int endNum = Settings.Instance.EpisodeEndNumber;
-                int startNum = Settings.Instance.EpisodeStartNumber;
-                if (endNum > 0 && endNum >= startNum)
-                {
-                    int maxCount = endNum - startNum + 1;
-
-                    if (Settings.Instance.Subs[0].Files.Length > maxCount)
-                        Settings.Instance.Subs[0].Files =
-                            Settings.Instance.Subs[0].Files.Take(maxCount).ToArray();
-
-                    if (Settings.Instance.Subs[1].Files.Length > maxCount)
-                        Settings.Instance.Subs[1].Files =
-                            Settings.Instance.Subs[1].Files.Take(maxCount).ToArray();
-
-                    if (Settings.Instance.VideoClips.Files.Length > maxCount)
-                        Settings.Instance.VideoClips.Files =
-                            Settings.Instance.VideoClips.Files.Take(maxCount).ToArray();
-
-                    if (Settings.Instance.AudioClips.Files.Length > maxCount)
-                        Settings.Instance.AudioClips.Files =
-                            Settings.Instance.AudioClips.Files.Take(maxCount).ToArray();
-                }
+                // The file lists from the patterns, cut to Episode End #; shared with subs2srs-cli.
+                ProjectFiles.Resolve();
             }
             catch (Exception e1)
             {
@@ -1366,24 +1334,34 @@ namespace subs2srs
             SaveSettings();
             ConstantSettings.UpdateAudioFilenameFormats();
 
-            bool needsAudioFromVideo =
-                (Settings.Instance.AudioClips.Enabled
-                    && Settings.Instance.AudioClips.UseAudioFromVideo)
-                || Settings.Instance.VideoClips.Enabled;
-
-            if (needsAudioFromVideo
-                && Settings.Instance.VideoClips.Files?.Length > 1)
+            // The checks subs2srs-cli runs too: every error in one message, then each warning
+            // asked. The audio-stream check probes every video, so they run off the GTK thread.
+            int streamIdx = (int)_comboAudioStream.GetSelected();
+            if (streamIdx < 0) streamIdx = 0;
+            // Without the Preview's lines the run parses the subtitles itself (no CombinedAll).
+            bool aiGroupingRuns = WorkerSubs.aiGroupingOnGoApplies(
+                previewVars ?? new WorkerVars(null!, "", WorkerVars.SubsProcessingType.Normal));
+            Settings settings = Settings.Instance;
+            List<GoProblem> problems;
+            _btnGo.SetSensitive(false); // no second Go while they run
+            try
             {
-                int streamIdx = (int)_comboAudioStream.GetSelected();
-                if (streamIdx < 0) streamIdx = 0;
-                var files = Settings.Instance.VideoClips.Files;
-                string warning = await Task.Run(() =>
-                    UtilsVideo.validateAudioStreamConsistency(files, streamIdx));
-                if (warning != null)
-                {
-                    if (!UtilsMsg.showConfirm(warning))
-                        return;
-                }
+                problems = await Task.Run(() => GoChecks.Run(settings, streamIdx, aiGroupingRuns));
+            }
+            finally
+            {
+                _btnGo.SetSensitive(true);
+            }
+            List<GoProblem> errors = problems.FindAll(p => p.IsError);
+            if (errors.Count > 0)
+            {
+                UtilsMsg.showErrMsg(string.Join("\n\n", errors.ConvertAll(p => p.Message)));
+                return;
+            }
+            foreach (GoProblem warning in problems)
+            {
+                if (!UtilsMsg.showConfirm(warning.Message))
+                    return;
             }
 
             _btnGo.SetSensitive(false);
