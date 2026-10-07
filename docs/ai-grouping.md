@@ -30,8 +30,13 @@ Invariants:
   omission settings are covered for free. A result with any failed chunk is **not cached**. *Regroup (AI)*
   forces a refresh. The model string is used verbatim, so `terminal-claude-sonnet-5` and
   `claude-sonnet-5` cache separately (on purpose: different transports enforce the schema differently).
-- **`PromptVersion`** (currently 2) must be bumped when the system prompt, the user payload or the
+- **`PromptVersion`** (currently 3) must be bumped when the system prompt, the user payload or the
   schema changes. Extra instructions are *not* a version: they are part of the key already.
+- **What the prompt asks for** (v3, user decision): one card per exchange between characters, and no
+  thin cards, meaning lines that are only a greeting, a name or an interjection, alone or grouped with
+  each other. v2 asked for the smallest self-contained group with most lines single, and so cut a
+  greeting and its reply off from the conversation they opened. A line that is a complete thought
+  still stays single. Never scored against labelled data ([open-items.md](open-items.md)).
 - Failure surface: no key, unknown model prefix, or every chunk failing → `ProviderException`, shown in
   the preview's status line or logged on Go. Partial failure → rules for those chunks, silently except
   for the log.

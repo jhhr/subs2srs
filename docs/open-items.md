@@ -90,7 +90,7 @@ No labelled data existed when these were chosen. The eval console exists to sett
 | Rules grouper | join gap ≤ 1500 ms **and** a cue (line ends in one of `?？…→、,`, or the actor changes) | The original design had cues optional and no commas; with commas the rules join many ordinary sentence continuations |
 | Gap removal | on by default, `GapKeepMs` 500, also affects sentence-joined lines in snippet mode Off | Changes output for users who never enabled snippets |
 | `MaxSnippetSeconds` / chunk target | 15 s / 200 lines | From the plan, unmeasured |
-| System prompt wording | `PromptVersion` 2 | Never tuned |
+| System prompt wording | `PromptVersion` 3 | v3 (exchanges kept together, no thin cards) was written from one episode's preview; never scored, and it may over-merge long conversations |
 | Default model | `claude-sonnet-5` | Chosen for cost, not measured quality |
 | Effort | Anthropic `medium`, OpenAI `low` | Asymmetric for no recorded reason |
 | Token estimate | chars ÷ 2.5 in, 20 + 4 × lines out | Japanese is denser than English; never compared with an invoice |
