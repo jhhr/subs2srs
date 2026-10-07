@@ -68,6 +68,7 @@
 - Temp file paths were built by string concatenation instead of `Path.Combine`.
 - Error messages for mp3gain/mkvextract failures said "ffmpeg".
 - `UtilsAudio.extractAudio` (non-progress path) passed the bitrate argument where the input file belonged.
+- `.srt` text kept every tag except `<i>`, `<b>` and `<u>`, so `<font color="...">` and the like ended up on the cards; all HTML-style tags are now removed.
 
 **Tests**:
 - New card-generation end-to-end tests in `subs2srs.Tests` (`SubsProcessorE2ETests`) that run the real pipeline against generated media; skipped when ffmpeg is absent.

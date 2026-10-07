@@ -40,6 +40,27 @@ namespace subs2srs.Tests
             Assert.Equal(TimeSpan.FromSeconds(4), lines[0].EndTime);
         }
 
+        [Theory]
+        [InlineData("<i>Hello</i> <b>World</b>", "Hello World")]
+        [InlineData("<font color=\"#ffff00\">Hello</font> World", "Hello World")]
+        [InlineData("<FONT face='Arial' size=12><u>Hello</u></FONT>", "Hello")]
+        [InlineData("<font color=\"red\">Hello\nWorld</font>", "Hello World")]
+        [InlineData("1 < 2 and 3 > 2", "1 < 2 and 3 > 2")]
+        [InlineData("I <3 you", "I <3 you")]
+        [InlineData("<テレビ>こんにちは", "<テレビ>こんにちは")]
+        public void ParseSRT_StripsHtmlStyleTags(string cueText, string expected)
+        {
+            var srt = "1\n00:00:01,000 --> 00:00:04,000\n" + cueText + "\n";
+            var path = Path.Combine(_tempDir, "tags.srt");
+            File.WriteAllText(path, srt, Encoding.UTF8);
+
+            var parser = new SubsParserSRT(path, Encoding.UTF8);
+            var lines = parser.parse();
+
+            Assert.Single(lines);
+            Assert.Equal(expected, lines[0].Text);
+        }
+
         [Fact]
         public void ParseASS_ValidFile_ReturnsLines()
         {
